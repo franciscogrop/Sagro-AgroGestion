@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestión Agro SAGRO SRL</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">GA</div>
+          <div>
+            <strong>Gestión Agro SAGRO SRL</strong>
+            <span>Campo, depósito y campaña</span>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Secciones">
+          <button class="nav-item active nav-secondary-item" data-view="dashboard">Panel</button>
+          <button class="nav-item nav-primary-item" data-view="ordenes">Orden de trabajo</button>
+          <button class="nav-item nav-primary-item" data-view="monitoreo">Monitoreo</button>
+          <button class="nav-item nav-primary-item" data-view="lotes">Lotes</button>
+          <button class="nav-item nav-primary-item" data-view="mapa">Mapa</button>
+          <div class="nav-secondary">
+            <button class="nav-item" data-view="stock">Depósito</button>
+            <button class="nav-item" data-view="costos">Costos</button>
+            <button class="nav-item" data-view="rotacion">Rotación</button>
+            <button class="nav-item" data-view="historico">Histórico</button>
+            <button class="nav-item" data-view="cierre">Cierre de campaña</button>
+          </div>
+          <details class="nav-more">
+            <summary>Menú</summary>
+            <button class="nav-item" data-view="mapa">Mapa</button>
+            <button class="nav-item" data-view="dashboard">Panel</button>
+            <button class="nav-item" data-view="stock">Depósito</button>
+            <button class="nav-item" data-view="costos">Costos</button>
+            <button class="nav-item" data-view="rotacion">Rotación</button>
+            <button class="nav-item" data-view="historico">Histórico</button>
+            <button class="nav-item" data-view="cierre">Cierre</button>
+          </details>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Campaña activa</p>
+            <h1 id="viewTitle">Panel general</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="sync-icon-button" id="globalSyncNow" type="button" title="Sincronizar" aria-label="Sincronizar">↻</button>
+            <div class="campaign-pill">
+              <b class="company-label">SAGRO SRL</b>
+              <span>2025/26</span>
+            </div>
+          </div>
+        </header>
+
+        <section class="view active" id="dashboard">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Alertas operativas</h2>
+            </div>
+            <div id="dashboardOperationalAlerts" class="alert-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Alertas de depósito y pagos</h2>
+            </div>
+            <div id="dashboardPaymentAlerts" class="alert-grid"></div>
+          </section>
+
+          <section class="panel sync-panel">
+            <div class="panel-header compact">
+              <h2>Sincronizacion con Google Sheets</h2>
+              <span class="panel-note">Carga local primero, sincroniza cuando hay conexion</span>
+            </div>
+            <div class="sync-grid">
+              <label>URL de Apps Script
+                <input id="syncApiUrl" type="url" placeholder="https://script.google.com/macros/s/..." />
+              </label>
+              <div class="sync-actions">
+                <button class="link-button" id="saveSyncConfig" type="button">Guardar URL</button>
+                <button class="link-button primary" id="syncNow" type="button">Sincronizar ahora</button>
+              </div>
+              <div id="syncStatus" class="sync-status"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="lotes">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Lotes cargados</h2>
+              <span class="panel-note">Hacé clic en un lote para ver su ficha</span>
+            </div>
+            <div class="table-wrap">
+              <table class="lots-table">
+                <thead>
+                  <tr>
+                    <th>Lote</th>
+                    <th>Campo</th>
+                    <th>Ha</th>
+                    <th>Campaña</th>
+                    <th>Cultivo</th>
+                    <th>Variedad/Híbrido</th>
+                    <th>Antecesor</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="lotsTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="form-band compact-form">
+            <h2 id="lotFormTitle">Nuevo lote</h2>
+            <form id="lotForm" class="form-grid">
+              <label>Nombre <input name="name" required placeholder="Lote 1" /></label>
+              <label>Campo <input name="farm" required placeholder="La Esperanza" /></label>
+              <label>Hectáreas <input name="hectares" type="number" min="0" step="0.01" required /></label>
+              <label>Campaña <input name="campaign" required value="2025/26" /></label>
+              <label>Cultivo <input name="crop" required placeholder="Soja" /></label>
+              <label>Variedad/Híbrido <input name="variety" placeholder="DM 46i20, DK 72-10" /></label>
+              <label>Antecesor <input name="previousCrop" placeholder="Maíz" /></label>
+              <button type="submit">Guardar lote</button>
+              <button class="link-button" id="cancelLotEdit" type="button" hidden>Cancelar edición</button>
+            </form>
+          </section>
+
+          <section class="panel hidden-panel" id="lotDetailPanel">
+            <div class="panel-header">
+              <h2>Ficha del lote</h2>
+            </div>
+            <div id="lotDetail" class="map-detail"></div>
+          </section>
+        </section>
+
+        <section class="view" id="ficha-lote">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Ficha del lote</h2>
+              <button class="link-button" id="backToLots" type="button">Volver a lotes</button>
+            </div>
+            <div id="fullLotDetail" class="map-detail"></div>
+          </section>
+        </section>
+
+        <section class="view" id="ficha-orden">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Ficha de orden</h2>
+              <button class="link-button" id="backFromOrderDetail" type="button">Volver</button>
+            </div>
+            <div id="orderDetail" class="map-detail"></div>
+          </section>
+        </section>
+
+        <section class="view" id="mapa">
+          <section class="form-band">
+            <h2>Mapa de lotes</h2>
+            <div class="map-loader">
+              <label>Archivo KML de polígonos
+                <input id="kmlInput" type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" />
+              </label>
+              <p>Los polígonos se vinculan al lote si el nombre del KML coincide con el nombre cargado en la app.</p>
+            </div>
+          </section>
+
+          <div class="map-layout">
+            <section class="panel map-panel">
+              <div class="panel-header">
+                <h2>Lotes georreferenciados</h2>
+                <div class="map-tools">
+                  <button class="map-zoom" data-map-zoom="in" type="button">+</button>
+                  <button class="map-zoom" data-map-zoom="out" type="button">-</button>
+                  <button class="map-zoom" data-map-zoom="reset" type="button">Reset</button>
+                  <span class="panel-note" id="mapCount">0 polígonos</span>
+                </div>
+              </div>
+              <div class="map-stage">
+                <svg id="lotMap" viewBox="0 0 900 560" role="img" aria-label="Mapa de lotes"></svg>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Ficha del lote</h2>
+              </div>
+              <div id="mapLotDetail" class="map-detail"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="ordenes">
+          <div class="order-summary">
+            <button class="order-summary-card" data-order-filter-shortcut="Pendiente" type="button"><span>Pendientes</span><strong id="ordersPending">0</strong></button>
+            <button class="order-summary-card" data-order-filter-shortcut="En curso" type="button"><span>En curso</span><strong id="ordersProgress">0</strong></button>
+            <button class="order-summary-card" data-order-filter-shortcut="Finalizada" type="button"><span>Finalizadas</span><strong id="ordersDone">0</strong></button>
+            <button class="order-summary-card" data-order-filter-shortcut="Pendiente" type="button"><span>Hectáreas pendientes</span><strong id="ordersPendingHa">0</strong></button>
+          </div>
+
+          <section class="form-band">
+            <h2>Nueva orden de trabajo</h2>
+            <form id="orderForm" class="form-grid">
+              <label>Fecha <input name="date" type="date" required /></label>
+              <label>Lote <select name="lotId" required></select></label>
+              <label>Cultivo <input name="crop" placeholder="Cultivo del lote" /></label>
+              <label>Variedad/Híbrido <input name="variety" placeholder="Se toma desde Lotes" readonly /></label>
+              <button class="secondary-form-button" data-set-barbecho="orderForm" type="button">Barbecho</button>
+              <label>Tarea guardada <select name="taskPreset"></select></label>
+              <label>Tarea <input name="task" required placeholder="Pulverización" /></label>
+              <label>Hectareas <input name="plannedHectares" type="number" min="0" step="0.01" /></label>
+              <label>Contratista guardado <select name="ownerPreset"></select></label>
+              <label>Responsable <input name="owner" placeholder="Operario / contratista" /></label>
+              <label>Costo labor/ha <input name="laborCostHa" type="number" min="0" step="0.01" value="0" /></label>
+              <label>Estado
+                <select name="status">
+                  <option>Pendiente</option>
+                  <option>En curso</option>
+                  <option>Finalizada</option>
+                  <option>Cancelada</option>
+                </select>
+              </label>
+              <label>Observaciones <input name="notes" placeholder="Detalle breve" /></label>
+              <button type="submit">Guardar orden</button>
+            </form>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Órdenes registradas</h2>
+              <div class="order-filters">
+                <button class="order-filter active" data-order-filter="Todas" type="button">Todas</button>
+                <button class="order-filter" data-order-filter="Pendiente" type="button">Pendientes</button>
+                <button class="order-filter" data-order-filter="En curso" type="button">En curso</button>
+                <button class="order-filter" data-order-filter="Finalizada" type="button">Finalizadas</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="orders-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Lote</th>
+                    <th>Tarea</th>
+                    <th>Ha</th>
+                    <th>Responsable</th>
+                    <th>Estado</th>
+                    <th>Aplicación / acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="ordersTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="monitoreo">
+          <section class="form-band">
+            <h2>Nuevo monitoreo</h2>
+            <form id="monitorForm" class="form-grid">
+              <label>Fecha <input name="date" type="date" required /></label>
+              <label>Lote <select name="lotId" required></select></label>
+              <label>Cultivo <input name="crop" placeholder="Cultivo del lote" /></label>
+              <label>Variedad/Híbrido <input name="variety" placeholder="Variedad del lote" /></label>
+              <button class="secondary-form-button" data-set-barbecho="monitorForm" type="button">Barbecho</button>
+              <label>Estado del cultivo <input name="cropStatus" placeholder="Bueno / regular" /></label>
+              <label>Malezas <input name="weeds" placeholder="Rama negra, yuyo colorado" /></label>
+              <label>Plagas / enfermedades <input name="issues" placeholder="Trips, roya, mancha" /></label>
+              <label>Recomendación <input name="recommendation" placeholder="Aplicar / seguir monitoreando" /></label>
+              <label>Foto <input name="photoFile" type="file" accept="image/*" /></label>
+              <button type="submit">Guardar monitoreo</button>
+            </form>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Recorridas</h2>
+            </div>
+            <div id="monitorList" class="list"></div>
+          </section>
+        </section>
+
+        <section class="view" id="ficha-monitoreo">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Ficha de monitoreo</h2>
+              <button class="link-button" id="backToMonitors" type="button">Volver a monitoreo</button>
+            </div>
+            <div id="monitorDetail" class="monitor-detail"></div>
+          </section>
+        </section>
+
+        <section class="view" id="aplicaciones">
+          <section class="form-band" id="applicationFormBand">
+            <h2>Nueva aplicación</h2>
+            <form id="applicationForm" class="form-grid">
+              <label>Fecha <input name="date" type="date" required /></label>
+              <label>Lote <select name="lotId" required></select></label>
+              <label>ID orden <input name="orderId" placeholder="ORD-001" /></label>
+              <label>ID aplicacion <input name="id" placeholder="APL-001" /></label>
+              <label>Producto <select name="productId" required></select></label>
+              <label>Dosis/ha <input name="dose" type="number" min="0" step="0.0001" required /></label>
+              <label>Hectáreas <input name="hectares" type="number" min="0" step="0.01" required /></label>
+              <label>Costo labor/ha <input name="laborCostHa" type="number" min="0" step="0.01" value="0" /></label>
+              <button type="submit">Guardar aplicación</button>
+            </form>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Aplicaciones y costos</h2>
+              <div class="panel-actions">
+                <button class="link-button" id="backToOrders" type="button">Volver a órdenes</button>
+                <button class="link-button" id="showAllApplications" type="button">Ver todas</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Lote</th>
+                    <th>Producto</th>
+                    <th>Ha</th>
+                    <th>Costo total</th>
+                    <th>$/ha</th>
+                  </tr>
+                </thead>
+                <tbody id="applicationsTable"></tbody>
+              </table>
+            </div>
+            <div id="applicationDetail" class="application-detail"></div>
+          </section>
+        </section>
+
+        <section class="view" id="stock">
+          <section class="form-band">
+            <h2>Nuevo producto</h2>
+            <form id="productForm" class="form-grid">
+              <label>Producto <input name="name" required placeholder="Glifosato" /></label>
+              <label>Tipo
+                <select name="type">
+                  <option>Herbicida</option>
+                  <option>Insecticida</option>
+                  <option>Fungicida</option>
+                  <option>Fertilizante</option>
+                  <option>Semilla</option>
+                  <option>Otro</option>
+                </select>
+              </label>
+              <label>Unidad <input name="unit" required placeholder="lt, kg, bolsa" /></label>
+              <label>Stock <input name="quantity" type="number" min="0" step="0.01" required /></label>
+              <label>Costo unitario <input name="unitCost" type="number" min="0" step="0.01" required /></label>
+              <label>Depósito <input name="warehouse" placeholder="Galpón principal" /></label>
+              <button type="submit">Guardar producto</button>
+            </form>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Productos en depósito</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Tipo</th>
+                    <th>Físico</th>
+                    <th>Reservado</th>
+                    <th>Disponible</th>
+                    <th>Costo unit.</th>
+                    <th>Valorizado</th>
+                    <th>Depósito</th>
+                  </tr>
+                </thead>
+                <tbody id="productsTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="costos">
+          <div class="cost-summary" id="costSummary"></div>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Costos por lote</h2>
+              <span class="panel-note">Aplicaciones + labores vinculadas a órdenes</span>
+            </div>
+            <div id="costCards" class="cost-cards"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Detalle económico</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Lote</th>
+                    <th>Campaña</th>
+                    <th>Ha</th>
+                    <th>Labor</th>
+                    <th>Herbicidas</th>
+                    <th>Fertilizantes</th>
+                    <th>Semillas</th>
+                    <th>Otros</th>
+                    <th>Total</th>
+                    <th>u$s/ha</th>
+                  </tr>
+                </thead>
+                <tbody id="costTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="rotacion">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Vista de rotación</h2>
+              <span class="panel-note">Por lote y campaña</span>
+            </div>
+            <div id="rotationGrid" class="rotation-grid"></div>
+          </section>
+        </section>
+
+        <section class="view desktop-view" id="ficha-campana">
+          <section class="panel">
+            <div class="panel-header">
+              <h2 id="campaignDetailTitle">Ficha de campaña</h2>
+              <button class="link-button" id="backToRotation" type="button">Volver a rotación</button>
+            </div>
+            <div id="campaignDetail"></div>
+          </section>
+        </section>
+
+        <section class="view desktop-view" id="historico">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Rendimiento histórico por cultivo</h2>
+              <span class="panel-note">Promedios calculados solo con campañas que tienen rinde cargado</span>
+            </div>
+            <div id="historyCropCards" class="history-crop-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Buscar lote</h2>
+              <span class="panel-note">Elegí un lote para abrir su historia completa</span>
+            </div>
+            <div class="history-search">
+              <input id="historyLotSearch" list="historyLotOptions" placeholder="Buscar lote o campo" />
+              <datalist id="historyLotOptions"></datalist>
+              <button class="link-button primary" id="openHistoryLot" type="button">Ver historia del lote</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="view desktop-view" id="ficha-historico-cultivo">
+          <section class="panel">
+            <div class="panel-header">
+              <h2 id="historyCropTitle">Detalle por cultivo</h2>
+              <button class="link-button" id="backToHistoryFromCrop" type="button">Volver a histórico</button>
+            </div>
+            <div id="historyCropDetail"></div>
+          </section>
+        </section>
+
+        <section class="view desktop-view" id="ficha-historico-lote">
+          <section class="panel">
+            <div class="panel-header">
+              <h2 id="historyLotTitle">Historia por lote</h2>
+              <div class="panel-actions">
+                <label class="inline-select">Cultivo
+                  <select id="historyLotCropFilter"></select>
+                </label>
+                <label class="inline-select">Campaña
+                  <select id="historyLotCampaignFilter"></select>
+                </label>
+                <button class="link-button" id="backToHistoryFromLot" type="button">Volver a histórico</button>
+              </div>
+            </div>
+            <div id="historyLotDetail"></div>
+          </section>
+        </section>
+
+        <section class="view" id="cierre">
+          <section class="form-band">
+            <h2>Cerrar campaña</h2>
+            <form id="closureForm" class="form-grid">
+              <label>Lote <select name="lotId" required></select></label>
+              <label>Campaña <input name="campaign" required value="2025/26" /></label>
+              <label>Cultivo <input name="crop" required placeholder="Soja" /></label>
+              <label>Variedad/Híbrido <input name="variety" placeholder="DK 7272, Ceibo" /></label>
+              <label>ENSO
+                <select name="enso">
+                  <option value="">Sin dato</option>
+                  <option>El Niño</option>
+                  <option>La Niña</option>
+                  <option>Neutral</option>
+                </select>
+              </label>
+              <label>Ha cosechadas <input name="hectares" type="number" min="0" step="0.01" required /></label>
+              <label>Kg cosechados <input name="kgHarvested" type="number" min="0" step="1" required /></label>
+              <label>Precio por tonelada <input name="priceTon" type="number" min="0" step="0.01" required /></label>
+              <label>Otros costos <input name="otherCosts" type="number" min="0" step="0.01" value="0" /></label>
+              <button type="submit">Guardar cierre</button>
+            </form>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Rendimientos históricos</h2>
+              <label class="inline-select">Cultivo
+                <select id="closureCropFilter"></select>
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Lote</th>
+                    <th>Campaña</th>
+                    <th>Cultivo</th>
+                    <th>Var./Híb.</th>
+                    <th>ENSO</th>
+                    <th>Kg cosechados</th>
+                    <th>Rinde kg/ha</th>
+                    <th>Ingreso bruto</th>
+                    <th>Margen bruto</th>
+                  </tr>
+                </thead>
+                <tbody id="closuresTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="data.js?v=20260513-textos-campana"></script>
+    <script src="app.js?v=20260513-textos-campana"></script>
+  </body>
+</html>
