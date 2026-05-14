@@ -2117,6 +2117,7 @@ function renderCampaignDetail() {
       <td>${moneyOptional(record.income)}</td>
       <td>
         <button class="link-button" data-edit-campaign-closure="${record.id}" type="button">Editar</button>
+        <button class="link-button danger" data-delete-campaign-closure="${record.id}" type="button">Eliminar</button>
       </td>
     </tr>
   `).join("") || `<tr><td colspan="8">Todavía no hay datos cargados para esta campaña.</td></tr>`;
@@ -2235,6 +2236,19 @@ function saveCampaignDetailRecord(event) {
   showToast("Campaña guardada");
 }
 
+function deleteCampaignDetailRecord(id) {
+  const record = data.closures.find((closure) => closure.id === id);
+  if (!record) return;
+  if (!window.confirm(`Eliminar ${record.crop || "este registro"} de la campaña ${record.campaign || selectedCampaign}?`)) return;
+  data.closures = data.closures.filter((closure) => closure.id !== id);
+  queueSync("closures", record, "delete");
+  if (editingCampaignClosureId === id) editingCampaignClosureId = "";
+  saveData();
+  renderAll();
+  renderCampaignDetail();
+  showToast("Registro eliminado");
+}
+
 function bindCampaignDetailRenderedTools() {
   upgradeCampaignCropControl();
   document.querySelector("#campaignDetailForm")?.addEventListener("submit", saveCampaignDetailRecord);
@@ -2249,6 +2263,9 @@ function bindCampaignDetailRenderedTools() {
       editingCampaignClosureId = button.dataset.editCampaignClosure;
       renderCampaignDetail();
     });
+  });
+  document.querySelectorAll("[data-delete-campaign-closure]").forEach((button) => {
+    button.addEventListener("click", () => deleteCampaignDetailRecord(button.dataset.deleteCampaignClosure));
   });
 }
 

@@ -1617,8 +1617,7 @@ td {
 
   .nav-secondary,
   .nav-secondary-item,
-  .nav-primary-item[data-view="mapa"],
-  .nav-item[data-view="historico"] {
+  .nav-primary-item[data-view="mapa"] {
     display: none;
   }
 
@@ -1752,10 +1751,6 @@ td {
 
   .history-search {
     flex-direction: column;
-  }
-
-  .desktop-view.active {
-    display: none;
   }
 
   .rotation-row {
