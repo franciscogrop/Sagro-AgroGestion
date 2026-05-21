@@ -243,8 +243,13 @@ function syncBadge(record) {
 }
 
 async function syncPending() {
-  if (syncRunning || !syncConfig.apiUrl) {
+  if (syncRunning) {
     renderSyncStatus();
+    return;
+  }
+  if (!syncConfig.apiUrl) {
+    renderSyncStatus();
+    showToast("Falta pegar la URL de Apps Script");
     return;
   }
 
@@ -265,7 +270,7 @@ async function syncPending() {
     saveData();
     showToast(syncedIds.size ? "Sincronizacion completa" : "Datos actualizados desde Sheets");
   } catch (error) {
-    showToast("No se pudo confirmar. Queda pendiente");
+    showToast(`No se pudo sincronizar: ${error.message || "queda pendiente"}`);
   } finally {
     syncRunning = false;
     renderSyncStatus();
@@ -357,7 +362,7 @@ function pullRemoteData() {
       cleanup();
       reject(new Error("No se pudo conectar con Apps Script"));
     };
-    script.src = `${syncConfig.apiUrl}${separator}action=read&callback=${callbackName}`;
+    script.src = `${syncConfig.apiUrl}${separator}action=read&callback=${callbackName}&ts=${Date.now()}`;
     document.body.appendChild(script);
   });
 }

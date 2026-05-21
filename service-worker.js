@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v55-mobile-historico";
+const CACHE_NAME = "gestion-agro-cache-v56-sync-refresh";
 const ASSETS = [
   "./",
   "./index.html",
@@ -20,11 +20,20 @@ self.addEventListener("activate", (event) => {
       keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
     ))
   );
+  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  if (event.request.url.includes("script.google.com")) return;
+
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
