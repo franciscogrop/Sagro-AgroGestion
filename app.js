@@ -57,6 +57,8 @@ let selectedHistoryLotId = "";
 let selectedCampaignLotId = "";
 let selectedCampaign = "";
 let editingCampaignClosureId = "";
+let editingClosureFormId = "";
+let closureReturnView = "";
 let rotationShowAllCampaigns = false;
 let closureCropFilter = "Todos";
 let historyLotCropFilter = "Todos";
@@ -274,7 +276,6 @@ async function syncPending() {
   } finally {
     syncRunning = false;
     renderSyncStatus();
-    renderAll();
   }
 }
 
@@ -649,6 +650,8 @@ function fillSelects() {
 
   fillOptionSelect('select[name="taskPreset"]', taskOptions(), "Elegir tarea");
   fillOptionSelect('select[name="ownerPreset"]', contractorOptions(), "Elegir contratista");
+  const taskList = document.querySelector("#taskList");
+  if (taskList) taskList.innerHTML = taskOptions().map((task) => `<option value="${task}"></option>`).join("");
 }
 
 function fillOptionSelect(selector, options, placeholder) {
@@ -1323,6 +1326,7 @@ function renderOrders() {
         <td>
           <div class="row-actions">
             ${applicationOrderIds.has(order.id) ? `<button class="link-button" data-open-application="${applicationByOrderId.get(order.id)}">Ver aplicación</button>` : orderNeedsApplication(order) ? `<button class="link-button primary" data-add-application="${order.id}">Agregar aplicación</button>` : ""}
+            ${order.status !== "Finalizada" ? `<button class="link-button" data-finish-order="${order.id}">Finalizar</button>` : ""}
             <button class="link-button" data-edit-order="${order.id}">Editar</button>
             <button class="link-button danger" data-delete-order="${order.id}">Eliminar</button>
           </div>
@@ -1350,6 +1354,12 @@ function renderOrders() {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       editOrder(button.dataset.editOrder);
+    });
+  });
+  document.querySelectorAll("[data-finish-order]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      finishOrder(button.dataset.finishOrder);
     });
   });
   document.querySelectorAll("[data-delete-order]").forEach((button) => {
@@ -1407,6 +1417,7 @@ function renderOrderDetail(orderId) {
         <span>Observaciones: ${order.notes || "-"}</span>
       </div>
       <div class="detail-actions">
+        ${order.status !== "Finalizada" ? `<button class="link-button primary" data-finish-order="${order.id}">Finalizar orden</button>` : ""}
         <button class="link-button" data-edit-order="${order.id}">Editar orden</button>
         <button class="link-button danger" data-delete-order="${order.id}">Eliminar orden</button>
       </div>
@@ -1430,6 +1441,7 @@ function renderOrderDetail(orderId) {
 
   detail.querySelector("[data-edit-order]")?.addEventListener("click", () => editOrder(order.id));
   detail.querySelector("[data-delete-order]")?.addEventListener("click", () => deleteOrder(order.id));
+  detail.querySelector("[data-finish-order]")?.addEventListener("click", () => finishOrder(order.id));
   detail.querySelector("[data-add-application]")?.addEventListener("click", () => openApplicationFormFromOrder(order.id));
   detail.querySelector("[data-open-application]")?.addEventListener("click", () => {
     highlightedApplicationId = applicationId;
@@ -1675,6 +1687,22 @@ function laborCostForApplicationRows(rows) {
   return rows.reduce((sum, row) => sum + Number(row.laborCostTotal || 0), 0);
 }
 
+function updateApplicationDoseFromTotal() {
+  const form = document.querySelector("#applicationForm");
+  if (!form?.elements?.totalQuantity || !form.elements.dose) return;
+  const total = Number(form.elements.totalQuantity.value || 0);
+  const hectares = Number(form.elements.hectares.value || 0);
+  if (total && hectares) form.elements.dose.value = (total / hectares).toFixed(4).replace(/\.?0+$/, "");
+}
+
+function updateApplicationTotalFromDose() {
+  const form = document.querySelector("#applicationForm");
+  if (!form?.elements?.totalQuantity || !form.elements.dose) return;
+  const dose = Number(form.elements.dose.value || 0);
+  const hectares = Number(form.elements.hectares.value || 0);
+  if (dose && hectares) form.elements.totalQuantity.value = (dose * hectares).toFixed(4).replace(/\.?0+$/, "");
+}
+
 function openApplicationFormFromOrder(orderId) {
   const order = orderById(orderId);
   const form = document.querySelector("#applicationForm");
@@ -1762,6 +1790,17 @@ function editOrder(orderId) {
   showToast("Editando orden");
 }
 
+function finishOrder(orderId) {
+  const order = orderById(orderId);
+  if (!order) return;
+  order.status = "Finalizada";
+  order.date = todayValue();
+  queueSync("orders", order, "update");
+  saveData();
+  renderAll();
+  showToast("Orden finalizada");
+}
+
 function deleteOrder(orderId) {
   const order = orderById(orderId);
   const linkedApplications = data.applications.filter((application) => application.orderId === orderId);
@@ -1816,12 +1855,15 @@ function editApplication(key) {
   if (!row || !form) return;
   editingApplicationKey = key;
   applicationDraftOrderId = row.orderId || "";
+  highlightedApplicationId = "";
+  document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
   form.elements.date.value = row.date || "";
   form.elements.lotId.value = row.lotId || "";
   form.elements.orderId.value = row.orderId || "";
   form.elements.id.value = row.id || "";
   form.elements.productId.value = row.productId || "";
   form.elements.dose.value = row.dose || "";
+  if (form.elements.totalQuantity) form.elements.totalQuantity.value = row.usedQuantity || "";
   form.elements.hectares.value = row.hectares || "";
   form.elements.laborCostHa.value = row.laborCostHa || 0;
   form.querySelector('button[type="submit"]').textContent = "Actualizar aplicación";
@@ -1980,7 +2022,7 @@ function canonicalCropName(crop) {
   const normalized = normalizeName(value);
   if (!value) return "";
   if (normalized.startsWith("soja") && (normalized.includes("1") || normalized.includes("1ra") || normalized.includes("1o"))) return "Soja 1ra";
-  if (normalized.startsWith("soja") && (normalized.includes("2") || normalized.includes("2da") || normalized.includes("2o"))) return "Soja 2da";
+  if (normalized.startsWith("soja") && (normalized.includes("2") || normalized.includes("2da") || normalized.includes("2o") || normalized.includes("2°"))) return "Soja 2da";
   if (normalized.startsWith("soja")) return "Soja";
   if (normalized.includes("alfalfa")) return "Alfalfa";
   if (/^ma.*z/.test(normalized) || normalized.includes("maiz")) return "Maiz";
@@ -2254,6 +2296,27 @@ function deleteCampaignDetailRecord(id) {
   showToast("Registro eliminado");
 }
 
+function editClosureInMainForm(id, returnView = "ficha-campana") {
+  const record = data.closures.find((closure) => closure.id === id);
+  const form = document.querySelector("#closureForm");
+  if (!record || !form) return;
+  editingClosureFormId = id;
+  closureReturnView = returnView;
+  form.elements.lotId.value = record.lotId || "";
+  form.elements.campaign.value = record.campaign || "";
+  form.elements.crop.value = canonicalCropName(record.crop) || record.crop || "";
+  form.elements.variety.value = record.variety || "";
+  form.elements.enso.value = record.enso || "";
+  form.elements.hectares.value = record.hectares || "";
+  form.elements.kgHarvested.value = record.kgHarvested || "";
+  form.elements.priceTon.value = record.priceTon || "";
+  form.elements.otherCosts.value = record.otherCosts || 0;
+  form.querySelector('button[type="submit"]').textContent = "Actualizar cierre";
+  switchView("cierre");
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+  showToast("Editando cierre");
+}
+
 function bindCampaignDetailRenderedTools() {
   upgradeCampaignCropControl();
   document.querySelector("#campaignDetailForm")?.addEventListener("submit", saveCampaignDetailRecord);
@@ -2264,10 +2327,7 @@ function bindCampaignDetailRenderedTools() {
     renderCampaignDetail();
   });
   document.querySelectorAll("[data-edit-campaign-closure]").forEach((button) => {
-    button.addEventListener("click", () => {
-      editingCampaignClosureId = button.dataset.editCampaignClosure;
-      renderCampaignDetail();
-    });
+    button.addEventListener("click", () => editClosureInMainForm(button.dataset.editCampaignClosure, "ficha-campana"));
   });
   document.querySelectorAll("[data-delete-campaign-closure]").forEach((button) => {
     button.addEventListener("click", () => deleteCampaignDetailRecord(button.dataset.deleteCampaignClosure));
@@ -2588,6 +2648,7 @@ function renderAll() {
   renderHistoryPanel();
   renderClosures();
   if (document.querySelector("#ficha-campana")?.classList.contains("active")) renderCampaignDetail();
+  if (document.querySelector("#ficha-orden")?.classList.contains("active") && selectedOrderId) renderOrderDetail(selectedOrderId);
 }
 
 function formData(form) {
@@ -2759,14 +2820,23 @@ function bindForms() {
   const closureForm = document.querySelector("#closureForm");
   closureForm.elements.lotId.addEventListener("change", () => applyClosureDefaults(closureForm, true));
 
-  document.querySelector("#applicationForm").addEventListener("submit", (event) => {
+  const applicationForm = document.querySelector("#applicationForm");
+  applicationForm.elements.totalQuantity?.addEventListener("input", updateApplicationDoseFromTotal);
+  applicationForm.elements.hectares.addEventListener("input", () => {
+    if (applicationForm.elements.totalQuantity?.value) updateApplicationDoseFromTotal();
+    else updateApplicationTotalFromDose();
+  });
+  applicationForm.elements.dose.addEventListener("input", updateApplicationTotalFromDose);
+
+  applicationForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
     const product = data.products.find((item) => item.id === values.productId);
-    const dose = Number(values.dose);
     const hectares = Number(values.hectares);
+    const totalQuantity = Number(values.totalQuantity || 0);
+    const dose = totalQuantity && hectares ? totalQuantity / hectares : Number(values.dose);
     const laborCostHa = Number(values.laborCostHa);
-    const usedQuantity = dose * hectares;
+    const usedQuantity = totalQuantity || dose * hectares;
     const productCost = usedQuantity * Number(product?.unitCost || 0);
     const laborCost = laborCostHa * hectares;
 
@@ -2809,43 +2879,36 @@ function bindForms() {
       queueSync("applications", record);
     }
     saveData();
-    const keepContext = applicationDraftOrderId && values.orderId === applicationDraftOrderId;
-    if (keepContext) {
-      const kept = {
-        date: values.date,
-        lotId: values.lotId,
-        orderId: values.orderId,
-        id: applicationId,
-        hectares: values.hectares
-      };
-      resetForm(event.currentTarget);
-      event.currentTarget.elements.date.value = kept.date;
-      event.currentTarget.elements.lotId.value = kept.lotId;
-      event.currentTarget.elements.orderId.value = kept.orderId;
-      event.currentTarget.elements.id.value = kept.id;
-      event.currentTarget.elements.hectares.value = kept.hectares;
-      event.currentTarget.elements.laborCostHa.value = "0";
-    } else {
-      resetForm(event.currentTarget);
-    }
+    resetForm(event.currentTarget);
+    highlightedApplicationId = applicationId;
+    applicationDraftOrderId = "";
+    document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
     renderAll();
+    switchView("aplicaciones");
+    renderApplications();
     showToast("Aplicación guardada y stock actualizado");
   });
 
   document.querySelector("#closureForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
+    const crop = canonicalCropName(values.crop);
     const hectares = Number(values.hectares);
     const kgHarvested = Number(values.kgHarvested);
     const priceTon = Number(values.priceTon);
     const otherCosts = Number(values.otherCosts);
     const applicationCosts = applicationCostForLot(values.lotId);
     const income = (kgHarvested / 1000) * priceTon;
+    const existing = editingClosureFormId
+      ? data.closures.find((closure) => closure.id === editingClosureFormId)
+      : data.closures.find((closure) => closure.lotId === values.lotId && closure.campaign === values.campaign && canonicalCropName(closure.crop) === crop);
 
     const record = {
-      id: uid("clo"),
-      campaignGroupId: `CAM-${values.lotId}-${String(values.campaign || "").replace("/", "-")}`,
+      ...(existing || {}),
+      id: existing?.id || uid("clo"),
+      campaignGroupId: existing?.campaignGroupId || `CAM-${values.lotId}-${String(values.campaign || "").replace("/", "-")}`,
       ...values,
+      crop,
       hectares,
       kgHarvested,
       priceTon,
@@ -2855,12 +2918,26 @@ function bindForms() {
       grossMargin: income - otherCosts - applicationCosts
     };
 
-    data.closures.push(record);
-    queueSync("closures", record);
+    if (existing) {
+      const index = data.closures.findIndex((closure) => closure.id === existing.id);
+      if (index >= 0) data.closures[index] = record;
+      queueSync("closures", record, "update");
+    } else {
+      data.closures.push(record);
+      queueSync("closures", record);
+    }
     saveData();
+    const returnView = closureReturnView;
+    editingClosureFormId = "";
+    closureReturnView = "";
+    event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar cierre";
     resetForm(event.currentTarget);
     applyClosureDefaults(event.currentTarget, true);
     renderAll();
+    if (returnView) {
+      if (returnView === "ficha-campana") renderCampaignDetail();
+      switchView(returnView);
+    }
     showToast("Campaña cerrada");
   });
 }

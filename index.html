@@ -213,7 +213,7 @@
               <label>Variedad/Híbrido <input name="variety" placeholder="Se toma desde Lotes" readonly /></label>
               <button class="secondary-form-button" data-set-barbecho="orderForm" type="button">Barbecho</button>
               <label>Tarea guardada <select name="taskPreset"></select></label>
-              <label>Tarea <input name="task" required placeholder="Pulverización" /></label>
+              <label>Tarea <input name="task" list="taskList" required placeholder="Pulverización" /></label>
               <label>Hectareas <input name="plannedHectares" type="number" min="0" step="0.01" /></label>
               <label>Contratista guardado <select name="ownerPreset"></select></label>
               <label>Responsable <input name="owner" placeholder="Operario / contratista" /></label>
@@ -304,6 +304,7 @@
               <label>ID aplicacion <input name="id" placeholder="APL-001" /></label>
               <label>Producto <select name="productId" required></select></label>
               <label>Dosis/ha <input name="dose" type="number" min="0" step="0.0001" required /></label>
+              <label>Total producto <input name="totalQuantity" type="number" min="0" step="0.0001" placeholder="Calcula dosis" /></label>
               <label>Hectáreas <input name="hectares" type="number" min="0" step="0.01" required /></label>
               <label>Costo labor/ha <input name="laborCostHa" type="number" min="0" step="0.01" value="0" /></label>
               <button type="submit">Guardar aplicación</button>
@@ -541,7 +542,8 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="data.js?v=20260521-sync-refresh"></script>
-    <script src="app.js?v=20260521-sync-refresh"></script>
+    <datalist id="taskList"></datalist>
+    <script src="data.js?v=20260528-workorders"></script>
+    <script src="app.js?v=20260528-workorders"></script>
   </body>
 </html>
