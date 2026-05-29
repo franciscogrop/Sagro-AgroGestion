@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v57-workorders";
+const CACHE_NAME = "gestion-agro-cache-v58-sagro-url-sync";
 const ASSETS = [
   "./",
   "./index.html",

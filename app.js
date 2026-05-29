@@ -1,7 +1,7 @@
 const storageKey = "gestion-agro-v3";
 const syncQueueKey = "gestion-agro-sync-queue-v1";
 const syncConfigKey = "gestion-agro-sync-config-v1";
-const defaultSyncApiUrl = "https://script.google.com/macros/s/AKfycbyfMLJ6_yBk-gyuiCVcA_E-25aggAkt5dZWjoYyvQC0bnvOUGuV4F149M3YSegpF3Gg/exec";
+const defaultSyncApiUrl = "https://script.google.com/macros/s/AKfycbxCnXxTt91wEZF-rXzldO3zseFTuYBFKnMFzFi8DPtj3iVMGvamxS8uD0Jb2Ex1BTn_/exec";
 const syncedBadgeVisibleMs = 6000;
 
 const starterData = {
