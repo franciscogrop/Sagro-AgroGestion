@@ -613,6 +613,22 @@ h2 {
   padding: 7px 8px;
 }
 
+.product-detail-panel {
+  margin-top: 14px;
+}
+
+.deposit-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 0 18px 18px;
+}
+
+.deposit-detail-grid h3 {
+  margin: 16px 0 8px;
+  font-size: 15px;
+}
+
 .row-actions,
 .item-actions,
 .detail-actions {
@@ -1604,6 +1620,11 @@ td {
 }
 
 @media (max-width: 620px) {
+  .deposit-detail-grid {
+    grid-template-columns: 1fr;
+    padding: 0 12px 12px;
+  }
+
   .app-shell {
     padding-bottom: 74px;
   }
