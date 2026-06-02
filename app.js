@@ -1705,6 +1705,11 @@ function renderApplicationDetail(applicationId) {
   const first = rows[0];
   const productCost = rows.reduce((sum, row) => sum + Number(row.productCost || 0), 0);
   const linkedOrder = orderById(first.orderId);
+  const lot = findLot(first);
+  const service = linkedOrder?.task || "Aplicacion";
+  const owner = linkedOrder?.owner || "-";
+  const crop = linkedOrder?.crop || lot?.crop || "-";
+  const variety = linkedOrder?.variety || lot?.variety || "-";
   const laborCost = laborCostForApplicationRows(rows);
   const laborCostHa = linkedOrder ? Number(linkedOrder.laborCostHa || 0) : Number(first.laborCostHa || 0);
   const total = productCost + laborCost;
@@ -1725,6 +1730,28 @@ function renderApplicationDetail(applicationId) {
         <span>Total ${money(total)}</span>
         <span>Total/ha ${money(costHa)}</span>
       </div>
+    </div>
+    <div class="application-order-summary">
+      <article class="application-summary-main">
+        <span>Lote</span>
+        <strong>${lotName(first.lotId)}</strong>
+        <small>${lot?.farm || "-"}</small>
+      </article>
+      <article class="application-summary-main">
+        <span>Superficie</span>
+        <strong>${number(first.hectares, 2)} ha</strong>
+        <small>${crop}${variety && variety !== "-" ? ` - ${variety}` : ""}</small>
+      </article>
+      <article>
+        <span>Servicio</span>
+        <strong>${service}</strong>
+        <small>${owner}</small>
+      </article>
+      <article>
+        <span>Fecha</span>
+        <strong>${dateShort(first.date)}</strong>
+        <small>${linkedOrder?.status || "Pendiente"}</small>
+      </article>
     </div>
     <div class="table-wrap">
       <table>

@@ -441,9 +441,19 @@ h2 {
   justify-content: space-between;
   align-items: flex-start;
   gap: 14px;
-  padding: 16px 18px;
+  padding: 14px 18px 10px;
   background: #fffaf0;
   border-bottom: 1px solid var(--line);
+}
+
+.application-detail-header > div:first-child::before {
+  content: "Numero de orden";
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
 }
 
 .application-detail-header strong,
@@ -452,7 +462,8 @@ h2 {
 }
 
 .application-detail-header strong {
-  font-size: 18px;
+  margin-top: 2px;
+  font-size: 14px;
 }
 
 .application-detail-header span,
@@ -466,6 +477,63 @@ h2 {
   display: grid;
   gap: 4px;
   text-align: right;
+}
+
+.application-order-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 12px 18px 16px;
+  background: #fffaf0;
+  border-bottom: 1px solid var(--line);
+}
+
+.application-order-summary article {
+  min-height: 74px;
+  padding: 12px;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.application-order-summary span,
+.application-order-summary small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.application-order-summary strong {
+  display: block;
+  margin: 3px 0 4px;
+  font-size: 17px;
+  line-height: 1.16;
+}
+
+.application-order-summary .application-summary-main strong {
+  font-size: 22px;
+}
+
+@media (max-width: 760px) {
+  .application-detail-header {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 14px 12px 10px;
+  }
+
+  .application-detail-kpis {
+    text-align: left;
+  }
+
+  .application-order-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px 12px 14px;
+  }
+
+  .application-order-summary article {
+    min-height: 68px;
+    padding: 10px;
+  }
 }
 
 .metric,
