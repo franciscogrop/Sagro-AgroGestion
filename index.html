@@ -357,6 +357,7 @@
               <label>Costo unitario <input name="unitCost" type="text" inputmode="decimal" required /></label>
               <label>Depósito <input name="warehouse" placeholder="Galpón principal" /></label>
               <label>Nro. de remito <input name="receiptNumber" placeholder="Ej. R-1548" /></label>
+              <label>Fecha de remito <input name="receiptDate" type="date" /></label>
               <div class="form-actions">
                 <button type="submit">Guardar ingreso</button>
                 <button class="link-button hidden-panel" id="cancelProductEdit" type="button">Cancelar edición</button>
@@ -368,7 +369,7 @@
               <h2>Productos en depósito</h2>
               <div class="deposit-filters">
                 <label>Producto <input id="productNameFilter" list="productCatalogList" placeholder="Todos" /></label>
-                <label>Remito <input id="productReceiptFilter" placeholder="Todos" /></label>
+                <label>Remito <input id="productReceiptFilter" list="receiptCatalogList" placeholder="Todos" /></label>
               </div>
             </div>
             <div class="table-wrap">
@@ -560,7 +561,8 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <datalist id="taskList"></datalist>
     <datalist id="productCatalogList"></datalist>
-    <script src="data.js?v=20260602-stock-aplicaciones-previas"></script>
-    <script src="app.js?v=20260602-stock-aplicaciones-previas"></script>
+    <datalist id="receiptCatalogList"></datalist>
+    <script src="data.js?v=20260602-remitos-completos"></script>
+    <script src="app.js?v=20260602-remitos-completos"></script>
   </body>
 </html>
