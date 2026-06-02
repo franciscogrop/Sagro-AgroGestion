@@ -48,6 +48,7 @@ let applicationDraftOrderId = "";
 let editingLotId = "";
 let editingProductId = "";
 let selectedProductId = "";
+let editingReceiptIndex = -1;
 let editingOrderId = "";
 let editingMonitorId = "";
 let editingApplicationKey = "";
@@ -79,6 +80,7 @@ const titles = {
   monitoreo: "Monitoreo",
   aplicaciones: "Detalle de aplicación",
   stock: "Depósito",
+  "ficha-deposito": "Ficha del insumo",
   costos: "Costos por lote",
   rotacion: "Rotación de cultivos",
   historico: "Panel histórico",
@@ -490,6 +492,13 @@ function appendReceiptEntry(current, receiptNumber, quantity, unitCost) {
   if (!incoming) return String(current || "").trim();
   const entry = [incoming, todayValue(), parseDecimal(quantity), parseDecimal(unitCost)].join("|");
   return [String(current || "").trim(), entry].filter(Boolean).join("\n");
+}
+
+function serializeReceiptEntries(entries) {
+  return entries.map((entry) => entry.detailed
+    ? [entry.number, entry.date, parseDecimal(entry.quantity), parseDecimal(entry.unitCost)].join("|")
+    : entry.number
+  ).filter(Boolean).join("\n");
 }
 
 function matchingProductByName(name, excludedId = "") {
@@ -1995,8 +2004,47 @@ function cancelProductEdit() {
 
 function closeProductDetail() {
   selectedProductId = "";
-  document.querySelector("#productDetailPanel")?.classList.add("hidden-panel");
+  editingReceiptIndex = -1;
   document.querySelector("#productDetail").innerHTML = "";
+  switchView("stock");
+}
+
+function editReceipt(index) {
+  editingReceiptIndex = index;
+  renderProductDetail();
+}
+
+function saveReceiptEdit(index) {
+  const product = data.products.find((item) => item.id === selectedProductId);
+  const form = document.querySelector("#receiptEditForm");
+  const entries = receiptEntries(product);
+  const previous = entries[index];
+  if (!product || !form || !previous) return;
+  const values = formData(form);
+  if (!previous.detailed) {
+    entries[index] = { number: values.number.trim(), detailed: false };
+    product.receiptNumbers = serializeReceiptEntries(entries);
+    queueSync("products", product, "update");
+    saveData();
+    editingReceiptIndex = -1;
+    renderAll();
+    renderProductDetail();
+    showToast("Número de remito actualizado");
+    return;
+  }
+  const nextQuantity = parseDecimal(values.quantity);
+  const previousQuantity = parseDecimal(previous.quantity);
+  entries[index] = { number: values.number.trim(), date: values.date, quantity: nextQuantity, unitCost: parseDecimal(values.unitCost), detailed: true };
+  product.quantity = parseDecimal(product.quantity) + nextQuantity - previousQuantity;
+  product.receiptNumbers = serializeReceiptEntries(entries);
+  delete product.calculatedStock;
+  delete product.applicationUse;
+  queueSync("products", product, "update");
+  saveData();
+  editingReceiptIndex = -1;
+  renderAll();
+  renderProductDetail();
+  showToast("Remito actualizado");
 }
 
 function renderProductDetail() {
@@ -2005,7 +2053,7 @@ function renderProductDetail() {
   const detail = document.querySelector("#productDetail");
   if (!panel || !detail) return;
   if (!product) {
-    closeProductDetail();
+    detail.innerHTML = "";
     return;
   }
   const stock = stockForProduct(product);
@@ -2014,7 +2062,6 @@ function renderProductDetail() {
     .filter((application) => productMatchesApplication(product, application))
     .map((application) => ({ application, order: orderById(application.orderId) }))
     .sort((a, b) => String(b.application.date || b.order?.date || "").localeCompare(String(a.application.date || a.order?.date || "")));
-  panel.classList.remove("hidden-panel");
   detail.innerHTML = `
     <div class="application-detail-header">
       <div>
@@ -2026,7 +2073,7 @@ function renderProductDetail() {
         <span>Reservado ${number(stock.reserved, 2)} ${product.unit || ""}</span>
         <span>Disponible ${number(stock.available, 2)} ${product.unit || ""}</span>
       </div>
-      <button class="link-button" data-close-product-detail type="button">Cerrar</button>
+      <button class="link-button" data-close-product-detail type="button">Volver al depósito</button>
     </div>
     <div class="deposit-detail-grid">
       <div>
@@ -2035,11 +2082,26 @@ function renderProductDetail() {
           <table>
             <thead><tr><th>Remito</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
             <tbody>
-              ${entries.map((entry) => `<tr>
+              ${entries.map((entry, index) => editingReceiptIndex === index ? `<tr>
+                <td colspan="4">
+                  <form class="form-grid compact-form" id="receiptEditForm">
+                    <label>Remito <input name="number" value="${entry.number}" required /></label>
+                    ${entry.detailed ? `
+                      <label>Fecha <input name="date" type="date" value="${entry.date}" required /></label>
+                      <label>Cantidad <input name="quantity" type="text" inputmode="decimal" value="${entry.quantity}" required /></label>
+                      <label>Costo unit. <input name="unitCost" type="text" inputmode="decimal" value="${entry.unitCost}" required /></label>
+                    ` : `<span class="panel-note">Este ingreso anterior no guardó cantidad discriminada. Podés corregir el número de remito.</span>`}
+                    <div class="form-actions">
+                      <button type="submit">Guardar cambios</button>
+                      <button class="link-button" data-cancel-receipt-edit type="button">Cancelar</button>
+                    </div>
+                  </form>
+                </td>
+              </tr>` : `<tr>
                 <td>${entry.number}</td>
                 <td>${entry.detailed ? dateShort(entry.date) : "-"}</td>
                 <td>${entry.detailed ? `${number(entry.quantity, 2)} ${product.unit || ""}` : "Anterior sin detalle"}</td>
-                <td>${entry.detailed ? money(entry.unitCost) : "-"}</td>
+                <td>${entry.detailed ? money(entry.unitCost) : "-"} <button class="link-button" data-edit-receipt="${index}" type="button">Editar</button></td>
               </tr>`).join("") || `<tr><td colspan="4">Todavía no hay ingresos identificados por remito.</td></tr>`}
             </tbody>
           </table>
@@ -2065,6 +2127,15 @@ function renderProductDetail() {
     </div>
   `;
   detail.querySelector("[data-close-product-detail]")?.addEventListener("click", closeProductDetail);
+  detail.querySelectorAll("[data-edit-receipt]").forEach((button) => button.addEventListener("click", () => editReceipt(Number(button.dataset.editReceipt))));
+  detail.querySelector("[data-cancel-receipt-edit]")?.addEventListener("click", () => {
+    editingReceiptIndex = -1;
+    renderProductDetail();
+  });
+  detail.querySelector("#receiptEditForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveReceiptEdit(editingReceiptIndex);
+  });
 }
 
 function renderProducts() {
@@ -2108,8 +2179,9 @@ function renderProducts() {
   document.querySelectorAll("#productsTable tr[data-open-product]").forEach((row) => {
     row.addEventListener("click", () => {
       selectedProductId = row.dataset.openProduct;
+      editingReceiptIndex = -1;
       renderProductDetail();
-      document.querySelector("#productDetailPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      switchView("ficha-deposito");
     });
   });
   renderProductDetail();
