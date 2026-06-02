@@ -471,7 +471,17 @@ function receiptText(product) {
   return String(product?.receiptNumbers || product?.receiptNumber || "").trim();
 }
 
-function receiptEntries(product) {
+function productLogicalKey(product) {
+  return normalizeName(product?.name);
+}
+
+function productGroupProducts(product) {
+  const key = productLogicalKey(product);
+  if (!key) return product ? [product] : [];
+  return data.products.filter((item) => productLogicalKey(item) === key);
+}
+
+function receiptEntriesForProduct(product) {
   return String(receiptText(product) || "").split(/\r?\n/).flatMap((line) => {
     const value = line.trim();
     if (!value) return [];
@@ -481,6 +491,12 @@ function receiptEntries(product) {
     }
     return value.split(",").map((number) => ({ number: number.trim(), detailed: false })).filter((entry) => entry.number);
   });
+}
+
+function receiptEntries(product) {
+  return productGroupProducts(product).flatMap((item) =>
+    receiptEntriesForProduct(item).map((entry, index) => ({ ...entry, sourceProductId: item.id, sourceIndex: index }))
+  );
 }
 
 function receiptLabels(product) {
@@ -510,6 +526,16 @@ function matchingProductByName(name, excludedId = "") {
   const normalized = normalizeName(name);
   if (!normalized) return null;
   return data.products.find((product) => product.id !== excludedId && normalizeName(product.name) === normalized) || null;
+}
+
+function displayProducts() {
+  const groups = new Map();
+  data.products.forEach((product) => {
+    const key = productLogicalKey(product) || product.id;
+    const current = groups.get(key);
+    if (!current || receiptEntriesForProduct(product).length > receiptEntriesForProduct(current).length) groups.set(key, product);
+  });
+  return Array.from(groups.values());
 }
 
 function applyExistingProductDefaults() {
@@ -585,8 +611,10 @@ function orderById(id) {
 }
 
 function productMatchesApplication(product, application) {
-  if (application.productId && product.id === application.productId) return true;
-  return normalizeName(product.name) === normalizeName(application.productName);
+  const group = productGroupProducts(product);
+  const groupIds = new Set(group.map((item) => item.id));
+  if (application.productId && groupIds.has(application.productId)) return true;
+  return productLogicalKey(product) === normalizeName(application.productName);
 }
 
 function baseStock(product) {
@@ -600,7 +628,7 @@ function applicationQuantity(application) {
 }
 
 function stockForProduct(product) {
-  const base = baseStock(product);
+  const base = productGroupProducts(product).reduce((sum, item) => sum + baseStock(item), 0);
   const movements = data.applications.filter((application) => productMatchesApplication(product, application));
   const totals = movements.reduce((acc, application) => {
     const order = orderById(application.orderId);
@@ -2030,12 +2058,14 @@ function saveReceiptEdit(index) {
   const form = document.querySelector("#receiptEditForm");
   const entries = receiptEntries(product);
   const previous = entries[index];
-  if (!product || !form || !previous) return;
+  const targetProduct = data.products.find((item) => item.id === previous?.sourceProductId);
+  const targetEntries = receiptEntriesForProduct(targetProduct);
+  if (!targetProduct || !form || !previous) return;
   const values = formData(form);
   if (!previous.detailed) {
-    entries[index] = { number: values.number.trim(), detailed: false };
-    product.receiptNumbers = serializeReceiptEntries(entries);
-    queueSync("products", product, "update");
+    targetEntries[previous.sourceIndex] = { number: values.number.trim(), detailed: false };
+    targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+    queueSync("products", targetProduct, "update");
     saveData();
     editingReceiptIndex = -1;
     renderAll();
@@ -2045,12 +2075,12 @@ function saveReceiptEdit(index) {
   }
   const nextQuantity = parseDecimal(values.quantity);
   const previousQuantity = parseDecimal(previous.quantity);
-  entries[index] = { number: values.number.trim(), date: values.date, quantity: nextQuantity, unitCost: parseDecimal(values.unitCost), detailed: true };
-  product.quantity = parseDecimal(product.quantity) + nextQuantity - previousQuantity;
-  product.receiptNumbers = serializeReceiptEntries(entries);
-  delete product.calculatedStock;
-  delete product.applicationUse;
-  queueSync("products", product, "update");
+  targetEntries[previous.sourceIndex] = { number: values.number.trim(), date: values.date, quantity: nextQuantity, unitCost: parseDecimal(values.unitCost), detailed: true };
+  targetProduct.quantity = parseDecimal(targetProduct.quantity) + nextQuantity - previousQuantity;
+  targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+  delete targetProduct.calculatedStock;
+  delete targetProduct.applicationUse;
+  queueSync("products", targetProduct, "update");
   saveData();
   editingReceiptIndex = -1;
   renderAll();
@@ -2062,17 +2092,19 @@ function deleteReceipt(index) {
   const product = data.products.find((item) => item.id === selectedProductId);
   const entries = receiptEntries(product);
   const removed = entries[index];
-  if (!product || !removed) return;
+  const targetProduct = data.products.find((item) => item.id === removed?.sourceProductId);
+  const targetEntries = receiptEntriesForProduct(targetProduct);
+  if (!targetProduct || !removed) return;
   const detail = removed.detailed
     ? `Se restarán ${number(removed.quantity, 2)} ${product.unit || ""} del stock físico.`
     : "Es un antecedente sin cantidad discriminada: se quitará el número de remito sin modificar el stock.";
   if (!window.confirm(`¿Eliminar el remito ${removed.number}?\n\n${detail}`)) return;
-  entries.splice(index, 1);
-  if (removed.detailed) product.quantity = parseDecimal(product.quantity) - parseDecimal(removed.quantity);
-  product.receiptNumbers = serializeReceiptEntries(entries);
-  delete product.calculatedStock;
-  delete product.applicationUse;
-  queueSync("products", product, "update");
+  targetEntries.splice(removed.sourceIndex, 1);
+  if (removed.detailed) targetProduct.quantity = parseDecimal(targetProduct.quantity) - parseDecimal(removed.quantity);
+  targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+  delete targetProduct.calculatedStock;
+  delete targetProduct.applicationUse;
+  queueSync("products", targetProduct, "update");
   saveData();
   editingReceiptIndex = -1;
   renderAll();
@@ -2175,15 +2207,16 @@ function renderProductDetail() {
 function renderProducts() {
   const nameFilter = normalizeName(document.querySelector("#productNameFilter")?.value);
   const receiptFilter = normalizeName(document.querySelector("#productReceiptFilter")?.value);
-  const catalog = [...new Set(data.products.map((product) => product.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const productsForDisplay = displayProducts();
+  const catalog = [...new Set(productsForDisplay.map((product) => product.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const catalogList = document.querySelector("#productCatalogList");
   if (catalogList) catalogList.innerHTML = catalog.map((name) => `<option value="${name}"></option>`).join("");
-  const receiptCatalog = [...new Set(data.products.flatMap(receiptLabels))].sort((a, b) => a.localeCompare(b, "es"));
+  const receiptCatalog = [...new Set(productsForDisplay.flatMap(receiptLabels))].sort((a, b) => a.localeCompare(b, "es"));
   const receiptCatalogList = document.querySelector("#receiptCatalogList");
   if (receiptCatalogList) receiptCatalogList.innerHTML = receiptCatalog.map((number) => `<option value="${number}"></option>`).join("");
-  const filteredProducts = data.products.filter((product) => {
+  const filteredProducts = productsForDisplay.filter((product) => {
     if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
-    if (receiptFilter && !normalizeName(receiptText(product)).includes(receiptFilter)) return false;
+    if (receiptFilter && !normalizeName(receiptLabels(product).join(" ")).includes(receiptFilter)) return false;
     return true;
   });
 
