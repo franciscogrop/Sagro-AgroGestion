@@ -595,6 +595,24 @@ h2 {
   gap: 8px;
 }
 
+.deposit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.deposit-filters label {
+  font-size: 12px;
+}
+
+.deposit-filters input {
+  display: block;
+  width: 160px;
+  margin-top: 3px;
+  padding: 7px 8px;
+}
+
 .row-actions,
 .item-actions,
 .detail-actions {

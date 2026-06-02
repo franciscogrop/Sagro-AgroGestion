@@ -46,6 +46,7 @@ let orderFilter = "Todas";
 let highlightedApplicationId = "";
 let applicationDraftOrderId = "";
 let editingLotId = "";
+let editingProductId = "";
 let editingOrderId = "";
 let editingMonitorId = "";
 let editingApplicationKey = "";
@@ -403,6 +404,23 @@ function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function parseDecimal(value, fallback = 0) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+  let text = String(value ?? "").trim().replace(/\s/g, "");
+  if (!text) return fallback;
+  const comma = text.lastIndexOf(",");
+  const dot = text.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    const decimalSeparator = comma > dot ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+    text = text.replaceAll(thousandsSeparator, "").replace(decimalSeparator, ".");
+  } else {
+    text = text.replace(",", ".");
+  }
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function money(value) {
   return `u$s ${Number(value || 0).toLocaleString("es-AR", {
     minimumFractionDigits: 2,
@@ -444,6 +462,35 @@ function normalizeName(value) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function receiptText(product) {
+  return String(product?.receiptNumbers || product?.receiptNumber || "").trim();
+}
+
+function appendReceiptNumber(current, receiptNumber) {
+  const values = String(current || "").split(",").map((value) => value.trim()).filter(Boolean);
+  String(receiptNumber || "").split(",").map((value) => value.trim()).filter(Boolean).forEach((incoming) => {
+    if (!values.some((value) => normalizeName(value) === normalizeName(incoming))) values.push(incoming);
+  });
+  return values.join(", ");
+}
+
+function matchingProductByName(name, excludedId = "") {
+  const normalized = normalizeName(name);
+  if (!normalized) return null;
+  return data.products.find((product) => product.id !== excludedId && normalizeName(product.name) === normalized) || null;
+}
+
+function applyExistingProductDefaults() {
+  if (editingProductId) return;
+  const form = document.querySelector("#productForm");
+  const product = matchingProductByName(form?.elements?.name?.value);
+  if (!form || !product) return;
+  form.elements.type.value = product.type || "Otro";
+  form.elements.unit.value = product.unit || "";
+  form.elements.unitCost.value = product.unitCost ?? "";
+  form.elements.warehouse.value = product.warehouse || "";
 }
 
 function displayLotName(lot) {
@@ -1690,16 +1737,16 @@ function laborCostForApplicationRows(rows) {
 function updateApplicationDoseFromTotal() {
   const form = document.querySelector("#applicationForm");
   if (!form?.elements?.totalQuantity || !form.elements.dose) return;
-  const total = Number(form.elements.totalQuantity.value || 0);
-  const hectares = Number(form.elements.hectares.value || 0);
+  const total = parseDecimal(form.elements.totalQuantity.value);
+  const hectares = parseDecimal(form.elements.hectares.value);
   if (total && hectares) form.elements.dose.value = (total / hectares).toFixed(4).replace(/\.?0+$/, "");
 }
 
 function updateApplicationTotalFromDose() {
   const form = document.querySelector("#applicationForm");
   if (!form?.elements?.totalQuantity || !form.elements.dose) return;
-  const dose = Number(form.elements.dose.value || 0);
-  const hectares = Number(form.elements.hectares.value || 0);
+  const dose = parseDecimal(form.elements.dose.value);
+  const hectares = parseDecimal(form.elements.hectares.value);
   if (dose && hectares) form.elements.totalQuantity.value = (dose * hectares).toFixed(4).replace(/\.?0+$/, "");
 }
 
@@ -1888,8 +1935,61 @@ function returnApplicationStock(application) {
   return application;
 }
 
+function recalculateApplicationsForProduct(product) {
+  data.applications.forEach((application) => {
+    if (!productMatchesApplication(product, application)) return;
+    const usedQuantity = parseDecimal(application.usedQuantity);
+    const laborCostTotal = parseDecimal(application.laborCostTotal);
+    application.productName = product.name;
+    application.unitCost = parseDecimal(product.unitCost);
+    application.productCost = usedQuantity * application.unitCost;
+    application.totalCost = application.productCost + laborCostTotal;
+    queueSync("applications", application, "update");
+  });
+}
+
+function editProduct(productId) {
+  const product = data.products.find((item) => item.id === productId);
+  const form = document.querySelector("#productForm");
+  if (!product || !form) return;
+  editingProductId = productId;
+  form.elements.name.value = product.name || "";
+  form.elements.type.value = product.type || "Otro";
+  form.elements.unit.value = product.unit || "";
+  form.elements.quantity.value = product.quantity ?? "";
+  form.elements.unitCost.value = product.unitCost ?? "";
+  form.elements.warehouse.value = product.warehouse || "";
+  form.elements.receiptNumber.value = receiptText(product);
+  document.querySelector("#productFormTitle").textContent = "Editar producto";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Stock físico total ";
+  form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
+  document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function cancelProductEdit() {
+  const form = document.querySelector("#productForm");
+  editingProductId = "";
+  if (form) resetForm(form);
+  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+  if (form) form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
+  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+}
+
 function renderProducts() {
-  document.querySelector("#productsTable").innerHTML = data.products
+  const nameFilter = normalizeName(document.querySelector("#productNameFilter")?.value);
+  const receiptFilter = normalizeName(document.querySelector("#productReceiptFilter")?.value);
+  const catalog = [...new Set(data.products.map((product) => product.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const catalogList = document.querySelector("#productCatalogList");
+  if (catalogList) catalogList.innerHTML = catalog.map((name) => `<option value="${name}"></option>`).join("");
+  const filteredProducts = data.products.filter((product) => {
+    if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
+    if (receiptFilter && !normalizeName(receiptText(product)).includes(receiptFilter)) return false;
+    return true;
+  });
+
+  document.querySelector("#productsTable").innerHTML = filteredProducts
     .map((product) => {
       const stock = stockForProduct(product);
       return `
@@ -1902,10 +2002,16 @@ function renderProducts() {
         <td>${money(product.unitCost)}</td>
         <td>${money(stock.available * product.unitCost)}</td>
         <td>${product.warehouse || "-"} · ${statusBadge(product.status || "OK")}</td>
+        <td>${receiptText(product) || "-"}</td>
+        <td><button class="link-button" data-edit-product="${product.id}" type="button">Editar</button></td>
       </tr>
     `;
     })
-    .join("") || `<tr><td colspan="8">No hay productos cargados.</td></tr>`;
+    .join("") || `<tr><td colspan="10">No hay productos para mostrar.</td></tr>`;
+
+  document.querySelectorAll("[data-edit-product]").forEach((button) => {
+    button.addEventListener("click", () => editProduct(button.dataset.editProduct));
+  });
 }
 
 function costCategory(type) {
@@ -2237,11 +2343,11 @@ function saveCampaignDetailRecord(event) {
     return;
   }
   const existing = editingCampaignClosureId ? data.closures.find((closure) => closure.id === editingCampaignClosureId) : null;
-  const hectares = Number(values.hectares || 0);
-  const kgHarvested = values.kgHarvested === "" ? "" : Number(values.kgHarvested);
-  const priceTon = values.priceTon === "" ? "" : Number(values.priceTon);
-  const otherCosts = Number(values.otherCosts || 0);
-  const manualApplicationCosts = values.applicationCosts === "" ? "" : Number(values.applicationCosts);
+  const hectares = parseDecimal(values.hectares);
+  const kgHarvested = values.kgHarvested === "" ? "" : parseDecimal(values.kgHarvested);
+  const priceTon = values.priceTon === "" ? "" : parseDecimal(values.priceTon);
+  const otherCosts = parseDecimal(values.otherCosts);
+  const manualApplicationCosts = values.applicationCosts === "" ? "" : parseDecimal(values.applicationCosts);
   const applicationCosts = manualApplicationCosts === "" ? (existing?.applicationCosts ?? applicationCostForLot(lot.id)) : manualApplicationCosts;
   const income = kgHarvested && priceTon ? (kgHarvested / 1000) * priceTon : "";
   const grossMargin = income === "" ? "" : income - otherCosts - Number(applicationCosts || 0);
@@ -2667,7 +2773,7 @@ function bindForms() {
   document.querySelector("#lotForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
-    const record = { id: editingLotId || uid("lot"), ...values, hectares: Number(values.hectares) };
+    const record = { id: editingLotId || uid("lot"), ...values, hectares: parseDecimal(values.hectares) };
     if (editingLotId) {
       const index = data.lots.findIndex((lot) => lot.id === editingLotId);
       if (index >= 0) {
@@ -2689,14 +2795,43 @@ function bindForms() {
   document.querySelector("#productForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
-    const record = { id: uid("prod"), ...values, quantity: Number(values.quantity), unitCost: Number(values.unitCost) };
-    data.products.push(record);
-    queueSync("products", record);
+    const existing = editingProductId
+      ? data.products.find((product) => product.id === editingProductId)
+      : matchingProductByName(values.name);
+    const isNewIngreso = !editingProductId && Boolean(existing);
+    const receiptNumbers = appendReceiptNumber(receiptText(existing), values.receiptNumber);
+    const record = {
+      ...(existing || {}),
+      id: existing?.id || uid("prod"),
+      ...values,
+      quantity: isNewIngreso ? parseDecimal(existing.quantity) + parseDecimal(values.quantity) : parseDecimal(values.quantity),
+      unitCost: parseDecimal(values.unitCost),
+      receiptNumbers
+    };
+    delete record.receiptNumber;
+    if (existing) {
+      const index = data.products.findIndex((product) => product.id === existing.id);
+      if (index >= 0) data.products[index] = record;
+      queueSync("products", record, "update");
+      recalculateApplicationsForProduct(record);
+    } else {
+      data.products.push(record);
+      queueSync("products", record);
+    }
     saveData();
+    editingProductId = "";
     resetForm(event.currentTarget);
+    document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+    document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+    event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
+    document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
     renderAll();
-    showToast("Producto guardado");
+    showToast(isNewIngreso ? "Ingreso sumado al producto existente" : existing ? "Producto y costos actualizados" : "Producto guardado");
   });
+  document.querySelector("#cancelProductEdit")?.addEventListener("click", cancelProductEdit);
+  document.querySelector("#productForm")?.elements?.name?.addEventListener("change", applyExistingProductDefaults);
+  document.querySelector("#productNameFilter")?.addEventListener("input", renderProducts);
+  document.querySelector("#productReceiptFilter")?.addEventListener("input", renderProducts);
 
   const orderForm = document.querySelector("#orderForm");
   orderForm.elements.lotId.addEventListener("change", () => {
@@ -2732,8 +2867,8 @@ function bindForms() {
     const values = formData(event.currentTarget);
     delete values.taskPreset;
     delete values.ownerPreset;
-    const plannedHectares = Number(values.plannedHectares || 0);
-    const laborCostHa = Number(values.laborCostHa || 0);
+    const plannedHectares = parseDecimal(values.plannedHectares);
+    const laborCostHa = parseDecimal(values.laborCostHa);
     const record = {
       id: editingOrderId || uid("ord"),
       ...values,
@@ -2832,10 +2967,10 @@ function bindForms() {
     event.preventDefault();
     const values = formData(event.currentTarget);
     const product = data.products.find((item) => item.id === values.productId);
-    const hectares = Number(values.hectares);
-    const totalQuantity = Number(values.totalQuantity || 0);
-    const dose = totalQuantity && hectares ? totalQuantity / hectares : Number(values.dose);
-    const laborCostHa = Number(values.laborCostHa);
+    const hectares = parseDecimal(values.hectares);
+    const totalQuantity = parseDecimal(values.totalQuantity);
+    const dose = totalQuantity && hectares ? totalQuantity / hectares : parseDecimal(values.dose);
+    const laborCostHa = parseDecimal(values.laborCostHa);
     const usedQuantity = totalQuantity || dose * hectares;
     const productCost = usedQuantity * Number(product?.unitCost || 0);
     const laborCost = laborCostHa * hectares;
@@ -2893,10 +3028,10 @@ function bindForms() {
     event.preventDefault();
     const values = formData(event.currentTarget);
     const crop = canonicalCropName(values.crop);
-    const hectares = Number(values.hectares);
-    const kgHarvested = Number(values.kgHarvested);
-    const priceTon = Number(values.priceTon);
-    const otherCosts = Number(values.otherCosts);
+    const hectares = parseDecimal(values.hectares);
+    const kgHarvested = parseDecimal(values.kgHarvested);
+    const priceTon = parseDecimal(values.priceTon);
+    const otherCosts = parseDecimal(values.otherCosts);
     const applicationCosts = applicationCostForLot(values.lotId);
     const income = (kgHarvested / 1000) * priceTon;
     const existing = editingClosureFormId
