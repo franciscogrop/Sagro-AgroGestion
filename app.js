@@ -588,12 +588,18 @@ function baseStock(product) {
   return parseDecimal(product.quantity ?? product.calculatedStock);
 }
 
+function applicationQuantity(application) {
+  const explicit = parseDecimal(application.usedQuantity ?? application.quantity ?? application.cantidad);
+  if (explicit) return explicit;
+  return parseDecimal(application.dose) * parseDecimal(application.hectares);
+}
+
 function stockForProduct(product) {
   const base = baseStock(product);
   const movements = data.applications.filter((application) => productMatchesApplication(product, application));
   const totals = movements.reduce((acc, application) => {
     const order = orderById(application.orderId);
-    const quantity = Number(application.usedQuantity || 0);
+    const quantity = applicationQuantity(application);
     if (order?.status === "Finalizada" || (!order && application.id)) {
       acc.consumed += quantity;
     } else if (order?.status === "Cancelada") {
@@ -1963,7 +1969,7 @@ function returnApplicationStock(application) {
 function recalculateApplicationsForProduct(product) {
   data.applications.forEach((application) => {
     if (!productMatchesApplication(product, application)) return;
-    const usedQuantity = parseDecimal(application.usedQuantity);
+    const usedQuantity = applicationQuantity(application);
     const laborCostTotal = parseDecimal(application.laborCostTotal);
     application.productName = product.name;
     application.unitCost = parseDecimal(product.unitCost);
@@ -2118,7 +2124,7 @@ function renderProductDetail() {
                 <td>${order?.id || application.orderId || "-"}</td>
                 <td>${lotName(application.lotId || order?.lotId)}</td>
                 <td>${order?.status || "Aplicada"}</td>
-                <td>${number(application.usedQuantity, 2)} ${product.unit || ""}</td>
+                <td>${number(applicationQuantity(application), 2)} ${product.unit || ""}</td>
               </tr>`).join("") || `<tr><td colspan="5">No hay salidas vinculadas a órdenes.</td></tr>`}
             </tbody>
           </table>
