@@ -1716,6 +1716,19 @@ td {
     background: #17372b;
     border-top: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: 0 -10px 24px rgba(23, 55, 43, 0.18);
+    transform: translateY(0);
+    transition: transform 160ms ease;
+  }
+
+  .app-shell:has(#monitorForm :focus) .sidebar {
+    pointer-events: none;
+    transform: translateY(calc(100% + 2px));
+  }
+
+  #monitorForm textarea,
+  #monitorForm input,
+  #monitorForm select {
+    scroll-margin-bottom: 140px;
   }
 
   .brand {
