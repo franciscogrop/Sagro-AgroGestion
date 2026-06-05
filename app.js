@@ -698,7 +698,14 @@ function lotHectares(lotId) {
 }
 
 function lotCrop(lotId) {
-  return data.lots.find((lot) => lot.id === lotId)?.crop || "";
+  const lot = data.lots.find((item) => item.id === lotId);
+  if (!lot) return "";
+  if (lot.crop) return lot.crop;
+  return data.closures.find((closure) => (
+    sameLot(closure, lot)
+    && closure.campaign === lot.campaign
+    && closure.crop
+  ))?.crop || "";
 }
 
 function lotVariety(lotId) {
@@ -1306,7 +1313,15 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
     button.addEventListener("click", () => {
       switchView(button.dataset.mapAction);
       const select = document.querySelector(`#${button.dataset.mapAction} select[name="lotId"]`);
-      if (select) select.value = button.dataset.lotId;
+      if (select) {
+        select.value = button.dataset.lotId;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        const form = select.form;
+        applyLotDefaultCrop(form, true);
+        applyLotDefaultVariety(form, true);
+        if (button.dataset.mapAction === "ordenes") applyOrderLotDefaultHectares(true);
+        if (button.dataset.mapAction === "cierre") applyClosureDefaults(form, true);
+      }
     });
   });
   target.querySelectorAll("[data-open-order-detail]").forEach((row) => {
@@ -3259,6 +3274,7 @@ function bindForms() {
 
   applicationForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    const wasEditingApplication = Boolean(editingApplicationKey);
     const values = formData(event.currentTarget);
     const product = data.products.find((item) => item.id === values.productId);
     const hectares = parseDecimal(values.hectares);
@@ -3314,8 +3330,12 @@ function bindForms() {
     document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
     renderAll();
     switchView("aplicaciones");
+    highlightedApplicationId = applicationId;
     renderApplications();
-    showToast("Aplicación guardada y stock actualizado");
+    window.setTimeout(() => {
+      document.querySelector("#applicationDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    showToast(wasEditingApplication ? "Aplicación actualizada" : "Aplicación guardada y stock actualizado");
   });
 
   document.querySelector("#closureForm").addEventListener("submit", (event) => {
