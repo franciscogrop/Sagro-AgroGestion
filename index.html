@@ -268,10 +268,10 @@
               <label>Cultivo <input name="crop" placeholder="Cultivo del lote" /></label>
               <label>Variedad/Híbrido <input name="variety" placeholder="Variedad del lote" /></label>
               <button class="secondary-form-button" data-set-barbecho="monitorForm" type="button">Barbecho</button>
-              <label>Estado del cultivo <input name="cropStatus" placeholder="Bueno / regular" /></label>
-              <label>Malezas <input name="weeds" placeholder="Rama negra, yuyo colorado" /></label>
+              <label>Estado del cultivo <textarea name="cropStatus" rows="4" placeholder="Describir estado, desarrollo, cobertura y observaciones"></textarea></label>
+              <label>Malezas <textarea name="weeds" rows="3" placeholder="Rama negra, yuyo colorado"></textarea></label>
               <label>Plagas / enfermedades <input name="issues" placeholder="Trips, roya, mancha" /></label>
-              <label>Recomendación <input name="recommendation" placeholder="Aplicar / seguir monitoreando" /></label>
+              <label>Recomendación <textarea name="recommendation" rows="5" placeholder="Aplicar / seguir monitoreando"></textarea></label>
               <label>Foto <input name="photoFile" type="file" accept="image/*" /></label>
               <button type="submit">Guardar monitoreo</button>
             </form>
@@ -562,7 +562,7 @@
     <datalist id="taskList"></datalist>
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
-    <script src="data.js?v=20260602-orden-aplicacion-clara"></script>
-    <script src="app.js?v=20260602-orden-aplicacion-clara"></script>
+    <script src="data.js?v=20260605-monitoreo-multilinea"></script>
+    <script src="app.js?v=20260605-monitoreo-multilinea"></script>
   </body>
 </html>
