@@ -54,7 +54,7 @@
             <button class="sync-icon-button" id="globalSyncNow" type="button" title="Sincronizar" aria-label="Sincronizar">↻</button>
             <div class="campaign-pill">
               <b class="company-label">SAGRO SRL</b>
-              <span>2025/26</span>
+              <span id="activeCampaignLabel"></span>
             </div>
           </div>
         </header>
@@ -123,7 +123,7 @@
               <label>Nombre <input name="name" required placeholder="Lote 1" /></label>
               <label>Campo <input name="farm" required placeholder="La Esperanza" /></label>
               <label>Hectáreas <input name="hectares" type="text" inputmode="decimal" required /></label>
-              <label>Campaña <input name="campaign" required value="2025/26" /></label>
+              <label>Campaña <input name="campaign" required /></label>
               <label>Cultivo <input name="crop" required placeholder="Soja" /></label>
               <label>Variedad/Híbrido <input name="variety" placeholder="DM 46i20, DK 72-10" /></label>
               <label>Antecesor <input name="previousCrop" placeholder="Maíz" /></label>
@@ -554,7 +554,7 @@
             <h2>Cerrar campaña</h2>
             <form id="closureForm" class="form-grid">
               <label>Lote <select name="lotId" required></select></label>
-              <label>Campaña <input name="campaign" required value="2025/26" /></label>
+              <label>Campaña <input name="campaign" required /></label>
               <label>Cultivo <input name="crop" required placeholder="Soja" /></label>
               <label>Variedad/Híbrido <input name="variety" placeholder="DK 7272, Ceibo" /></label>
               <label>ENSO

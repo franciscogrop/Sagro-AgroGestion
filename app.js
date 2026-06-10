@@ -105,6 +105,7 @@ function loadData() {
   const base = window.APP_DATA ? { ...structuredClone(starterData), ...structuredClone(window.APP_DATA) } : structuredClone(starterData);
   const loaded = saved ? { ...base, ...JSON.parse(saved) } : base;
   loaded.applications = uniqueApplicationRows(loaded.applications || []);
+  normalizeCampaignRecords(loaded);
   return loaded;
 }
 
@@ -149,12 +150,17 @@ function safeStorageSet(key, value) {
   try {
     window.localStorage?.setItem(key, value);
   } catch {
-    showToast("Datos cargados, pero el navegador no permitió guardar localmente");
+    showToast("No se pudo guardar en este dispositivo. No cierres la app: sincronizá antes de continuar.");
   }
 }
 
 function queueSync(table, record, action = "append") {
+  const baseUpdatedAt = record?.updatedAt || "";
+  const updatedAt = new Date().toISOString();
+  if (record) record.updatedAt = updatedAt;
   const syncRecord = enrichRecordForSync(record);
+  syncRecord.baseUpdatedAt = baseUpdatedAt;
+  syncRecord.updatedAt = updatedAt;
   const item = {
     syncId: uid("sync"),
     table,
@@ -177,7 +183,6 @@ function enrichRecordForSync(record) {
   const enriched = { ...record };
   if (enriched.lotId && !enriched.lotName) enriched.lotName = lotName(enriched.lotId);
   if (enriched.productId && !enriched.productName) enriched.productName = productName(enriched.productId);
-  if (String(enriched.photo || "").startsWith("data:image")) enriched.photo = "Foto cargada en app";
   return enriched;
 }
 
@@ -405,6 +410,7 @@ function mergeRemoteData(remote) {
     });
     data[table] = table === "applications" ? uniqueApplicationRows(filtered) : filtered;
   });
+  normalizeCampaignRecords(data);
   data.products.forEach(recalculateApplicationsForProduct);
 }
 
@@ -482,7 +488,27 @@ function receiptText(product) {
 }
 
 function productLogicalKey(product) {
-  return normalizeName(product?.name);
+  return [
+    normalizeName(product?.name),
+    normalizeUnitKey(product?.unit),
+    normalizeWarehouseKey(product?.warehouse)
+  ].join("|");
+}
+
+function normalizeUnitKey(unit) {
+  const normalized = normalizeName(unit).replace(/\s+/g, "");
+  if (["l", "lt", "lts", "litro", "litros"].includes(normalized)) return "lt";
+  if (["kg", "kgs", "kilo", "kilos"].includes(normalized)) return "kg";
+  if (["un", "und", "unidad", "unidades"].includes(normalized)) return "un";
+  return normalized;
+}
+
+function normalizeWarehouseKey(warehouse) {
+  return normalizeName(warehouse)
+    .replace(/\bdeposito\b/g, "")
+    .replace(/\bprincipal\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function productGroupProducts(product) {
@@ -640,6 +666,68 @@ function sameLot(record, lot) {
   return findLot(record)?.id === lot.id;
 }
 
+function normalizeCampaignValue(value) {
+  const text = String(value || "").trim();
+  const compact = text.match(/^(\d{4})[/-](\d{2})$/);
+  if (compact) return `${compact[1]}/${compact[2]}`;
+  const sheetDate = text.match(/^(\d{4})-(\d{2})-01$/);
+  if (sheetDate) return `${sheetDate[1]}/${sheetDate[2]}`;
+  return text;
+}
+
+function normalizeCampaignRecords(dataset) {
+  ["lots", "orders", "applications", "closures"].forEach((table) => {
+    (dataset?.[table] || []).forEach((record) => {
+      if (record.campaign) record.campaign = normalizeCampaignValue(record.campaign);
+    });
+  });
+  const lots = dataset?.lots || [];
+  const closures = dataset?.closures || [];
+  const findDatasetLot = (record) => lots.find((lot) => lot.id === record?.lotId)
+    || lots.find((lot) => normalizeName(lot.name) === normalizeName(record?.lotName || record?.lote || record?.lotId));
+  lots.forEach((lot) => {
+    const latest = closures
+      .filter((closure) => closure.lotId === lot.id || normalizeName(closure.lotName) === normalizeName(lot.name))
+      .sort((a, b) => parseInt(normalizeCampaignValue(b.campaign), 10) - parseInt(normalizeCampaignValue(a.campaign), 10))[0];
+    if (!lot.campaign && latest?.campaign) lot.campaign = normalizeCampaignValue(latest.campaign);
+    if (!lot.crop && latest?.crop) lot.crop = latest.crop;
+    if (!lot.variety && latest?.variety) lot.variety = latest.variety;
+  });
+  (dataset?.orders || []).forEach((order) => {
+    if (!order.campaign) order.campaign = normalizeCampaignValue(findDatasetLot(order)?.campaign);
+  });
+  (dataset?.applications || []).forEach((application) => {
+    const order = (dataset?.orders || []).find((item) => item.id === application.orderId);
+    if (!application.campaign) {
+      application.campaign = normalizeCampaignValue(order?.campaign || findDatasetLot(application)?.campaign);
+    }
+  });
+}
+
+function activeCampaignValue() {
+  const campaigns = data.lots.map((lot) => normalizeCampaignValue(lot.campaign)).filter(Boolean);
+  return campaigns.sort((a, b) => parseInt(b, 10) - parseInt(a, 10))[0] || "";
+}
+
+function applyActiveCampaignDefaults() {
+  const campaign = activeCampaignValue();
+  const label = document.querySelector("#activeCampaignLabel");
+  if (label) label.textContent = campaign || "Sin campaña";
+  ["#lotForm", "#closureForm"].forEach((selector) => {
+    const input = document.querySelector(`${selector} [name="campaign"]`);
+    if (input && !input.value) input.value = campaign;
+  });
+}
+
+function recordMatchesCampaign(record, lot, campaign) {
+  const target = normalizeCampaignValue(campaign);
+  if (!target) return true;
+  const linkedOrder = record?.orderId ? orderById(record.orderId) : null;
+  const explicit = normalizeCampaignValue(record?.campaign || linkedOrder?.campaign);
+  if (explicit) return explicit === target;
+  return normalizeCampaignValue(lot?.campaign) === target;
+}
+
 function lotForPolygon(polygon) {
   return data.lots.find((lot) => lot.id === polygon.lotId)
     || data.lots.find((lot) => normalizeName(lot.name) === normalizeName(polygon.name))
@@ -667,7 +755,7 @@ function productMatchesApplication(product, application) {
   const group = productGroupProducts(product);
   const groupIds = new Set(group.map((item) => item.id));
   if (application.productId && groupIds.has(application.productId)) return true;
-  return productLogicalKey(product) === normalizeName(application.productName);
+  return !application.productId && normalizeName(product?.name) === normalizeName(application.productName);
 }
 
 function baseStock(product) {
@@ -762,7 +850,11 @@ function showToast(message) {
 }
 
 function todayValue() {
-  return new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function lotHectares(lotId) {
@@ -855,28 +947,48 @@ function fillOptionSelect(selector, options, placeholder) {
   });
 }
 
-function readImageAsDataUrl(file, maxSize = 1280, quality = 0.72) {
+function readImageAsDataUrl(file, maxSize = 720, maxCharacters = 24000) {
   if (!file || !file.type?.startsWith("image/")) return Promise.resolve("");
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onerror = () => resolve("");
     reader.onload = () => {
       const image = new Image();
-      image.onerror = () => resolve(String(reader.result || ""));
+      image.onerror = () => resolve("");
       image.onload = () => {
         const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
-        const width = Math.max(1, Math.round(image.width * scale));
-        const height = Math.max(1, Math.round(image.height * scale));
+        let width = Math.max(1, Math.round(image.width * scale));
+        let height = Math.max(1, Math.round(image.height * scale));
+        let quality = 0.68;
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        let dataUrl = "";
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext("2d");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, width, height);
+          context.drawImage(image, 0, 0, width, height);
+          dataUrl = canvas.toDataURL("image/jpeg", quality);
+          if (dataUrl.length <= maxCharacters) break;
+          if (quality > 0.38) quality -= 0.1;
+          else {
+            width = Math.max(280, Math.round(width * 0.78));
+            height = Math.max(210, Math.round(height * 0.78));
+            quality = 0.58;
+          }
+        }
+        resolve(dataUrl.length <= maxCharacters ? dataUrl : "");
       };
       image.src = String(reader.result || "");
     };
     reader.readAsDataURL(file);
   });
+}
+
+function monitorPhotoSource(photo) {
+  const value = String(photo || "");
+  return value.startsWith("data:image/") || /^https?:\/\//i.test(value) ? value : "";
 }
 
 function uniqueSorted(values) {
@@ -1669,7 +1781,7 @@ function renderMonitors() {
     .map((monitor) => `
       <div class="list-item clickable-card ${monitor.id === selectedMonitorId ? "selected" : ""}" data-monitor-id="${monitor.id}">
         <div class="monitor-list-row">
-          ${monitor.photo ? `<img class="monitor-thumb" src="${monitor.photo}" alt="Foto de monitoreo" loading="lazy" />` : ""}
+          ${monitorPhotoSource(monitor.photo) ? `<img class="monitor-thumb" src="${monitorPhotoSource(monitor.photo)}" alt="Foto de monitoreo" loading="lazy" />` : ""}
           <div>
             <strong>${dateShort(monitor.date)} · ${lotName(monitor.lotId)} · ${monitor.crop || lotCrop(monitor.lotId) || "-"} · ${lotVariety(monitor.lotId) || monitor.variety || "-"} · ${monitor.cropStatus || "Sin estado"} ${syncBadge(monitor)}</strong>
             <span>Malezas: ${monitor.weeds || "-"} · Plagas/enfermedades: ${monitor.issues || "-"} · Recomendación: ${monitor.recommendation || "-"}</span>
@@ -1727,7 +1839,7 @@ function renderMonitorDetail(monitorId) {
       <p><b>Plagas / enfermedades</b><span>${monitor.issues || "-"}</span></p>
       <p><b>Recomendación</b><span>${monitor.recommendation || "-"}</span></p>
     </div>
-    ${monitor.photo ? `<img class="monitor-photo" src="${monitor.photo}" alt="Foto de monitoreo" />` : ""}
+    ${monitorPhotoSource(monitor.photo) ? `<img class="monitor-photo" src="${monitorPhotoSource(monitor.photo)}" alt="Foto de monitoreo" />` : ""}
     <div class="detail-actions">
       <button class="link-button" data-edit-monitor="${monitor.id}">Editar</button>
       <button class="link-button danger" data-delete-monitor="${monitor.id}">Eliminar</button>
@@ -1956,7 +2068,7 @@ function openApplicationFormFromOrder(orderId) {
   switchView("aplicaciones");
   renderApplications();
 
-  form.elements.date.value = order.date || new Date().toISOString().slice(0, 10);
+  form.elements.date.value = order.date || todayValue();
   form.elements.lotId.value = order.lotId || "";
   form.elements.orderId.value = order.id;
   form.elements.id.value = suggestedApplicationId(order);
@@ -2035,7 +2147,7 @@ function finishOrder(orderId) {
   const order = orderById(orderId);
   if (!order) return;
   order.status = "Finalizada";
-  order.date = todayValue();
+  order.completionDate = todayValue();
   queueSync("orders", order, "update");
   saveData();
   renderAll();
@@ -2140,7 +2252,7 @@ function recalculateApplicationsForProduct(product) {
     application.productName = product.name;
     application.unitCost = unitCostForProductDate(product, applicationPricingDate(application), application.unitCost);
     application.productCost = usedQuantity * application.unitCost;
-    application.totalCost = application.productCost + laborCostTotal;
+    application.totalCost = application.productCost;
     if (
       Math.abs(previousUnitCost - application.unitCost) > 0.005
       || Math.abs(previousProductCost - application.productCost) > 0.005
@@ -2466,7 +2578,7 @@ function buildLotCosts() {
     const lot = findLot(order);
     const item = lot ? byLot.get(lot.id) : null;
     const laborTotal = laborCostForOrder(order);
-    if (!item) return;
+    if (!item || !recordMatchesCampaign(order, lot, lot.campaign)) return;
     const hectares = parseDecimal(order.plannedHectares || order.Hectareas_planificadas);
     item.labor += laborTotal;
     item.entries.push({
@@ -2484,8 +2596,9 @@ function buildLotCosts() {
   });
 
   uniqueApplicationRows(data.applications).forEach((application) => {
-    if (!byLot.has(application.lotId)) return;
-    const item = byLot.get(application.lotId);
+    const lot = findLot(application);
+    const item = lot ? byLot.get(lot.id) : null;
+    if (!item || !recordMatchesCampaign(application, lot, lot.campaign)) return;
     const category = costCategory(productType(application.productId));
     const productCost = applicationProductCost(application);
     const unitCost = applicationUnitCost(application);
@@ -2854,7 +2967,7 @@ function renderCampaignDetail() {
   const kgHarvested = editing?.kgHarvested || "";
   const priceTon = editing?.priceTon || "";
   const otherCosts = editing?.otherCosts || 0;
-  const applicationCosts = editing?.applicationCosts || "";
+  const applicationCosts = editing?.applicationCostsManual ? (editing.applicationCosts || "") : "";
   const ensoNormalized = normalizeName(enso);
 
   document.querySelector("#campaignDetailTitle").textContent = `${displayLotName(lot)}  ·  ${selectedCampaign}`;
@@ -2948,7 +3061,9 @@ function saveCampaignDetailRecord(event) {
   const priceTon = values.priceTon === "" ? "" : parseDecimal(values.priceTon);
   const otherCosts = parseDecimal(values.otherCosts);
   const manualApplicationCosts = values.applicationCosts === "" ? "" : parseDecimal(values.applicationCosts);
-  const applicationCosts = manualApplicationCosts === "" ? (existing?.applicationCosts ?? applicationCostForLot(lot.id)) : manualApplicationCosts;
+  const applicationCosts = manualApplicationCosts === ""
+    ? applicationCostForLot(lot.id, selectedCampaign)
+    : manualApplicationCosts;
   const income = kgHarvested && priceTon ? (kgHarvested / 1000) * priceTon : "";
   const grossMargin = income === "" ? "" : income - otherCosts - Number(applicationCosts || 0);
   const campaignGroupId = existing?.campaignGroupId
@@ -2969,6 +3084,7 @@ function saveCampaignDetailRecord(event) {
     priceTon,
     otherCosts,
     applicationCosts,
+    applicationCostsManual: manualApplicationCosts !== "",
     income,
     grossMargin
   };
@@ -3302,10 +3418,33 @@ function renderHistoryLotDetail(records = historicalYieldRecords()) {
   `;
 }
 
-function applicationCostForLot(lotId) {
-  return data.applications
-    .filter((application) => application.lotId === lotId)
-    .reduce((sum, application) => sum + application.totalCost, 0);
+function applicationCostForLot(lotId, campaign = "") {
+  const lot = data.lots.find((item) => item.id === lotId);
+  if (!lot) return 0;
+  const targetCampaign = normalizeCampaignValue(campaign || lot.campaign);
+  const eligibleOrders = data.orders.filter((order) => (
+    sameLot(order, lot)
+    && order.status === "Finalizada"
+    && recordMatchesCampaign(order, lot, targetCampaign)
+  ));
+  const eligibleOrderIds = new Set(eligibleOrders.map((order) => order.id));
+  const labor = eligibleOrders.reduce((sum, order) => sum + laborCostForOrder(order), 0);
+  const seenStandaloneLabor = new Set();
+  let standaloneLabor = 0;
+  const products = uniqueApplicationRows(data.applications)
+    .filter((application) => {
+      if (!sameLot(application, lot) || !recordMatchesCampaign(application, lot, targetCampaign)) return false;
+      const order = orderById(application.orderId);
+      return !order || eligibleOrderIds.has(order.id);
+    })
+    .reduce((sum, application) => {
+      if (!orderById(application.orderId) && !seenStandaloneLabor.has(application.id)) {
+        standaloneLabor += parseDecimal(application.laborCostTotal);
+        seenStandaloneLabor.add(application.id);
+      }
+      return sum + applicationProductCost(application);
+    }, 0);
+  return products + labor + standaloneLabor;
 }
 
 function renderClosures() {
@@ -3341,6 +3480,7 @@ function renderClosures() {
 
 function renderAll() {
   fillSelects();
+  applyActiveCampaignDefaults();
   renderSyncStatus();
   renderDashboard();
   renderLots();
@@ -3472,7 +3612,7 @@ function bindForms() {
   });
   orderForm.elements.status.addEventListener("change", () => {
     if (orderForm.elements.status.value === "Finalizada" && orderForm.dataset.originalStatus !== "Finalizada") {
-      orderForm.elements.date.value = todayValue();
+      orderForm.dataset.completionDate = todayValue();
     }
   });
   orderForm.elements.plannedHectares.addEventListener("input", () => {
@@ -3488,9 +3628,15 @@ function bindForms() {
     delete values.ownerPreset;
     const plannedHectares = parseDecimal(values.plannedHectares);
     const laborCostHa = parseDecimal(values.laborCostHa);
+    const existing = editingOrderId ? data.orders.find((order) => order.id === editingOrderId) : null;
+    const lot = findLot(values);
     const record = {
       id: editingOrderId || uid("ord"),
       ...values,
+      campaign: normalizeCampaignValue(existing?.campaign || lot?.campaign),
+      completionDate: values.status === "Finalizada"
+        ? (existing?.completionDate || event.currentTarget.dataset.completionDate || todayValue())
+        : "",
       plannedHectares,
       laborCostHa,
       laborCostTotal: plannedHectares * laborCostHa
@@ -3640,8 +3786,9 @@ function bindForms() {
       usedQuantity,
       unitCost,
       productName: product?.name || "",
+      campaign: normalizeCampaignValue(orderById(values.orderId)?.campaign || findLot(values)?.campaign),
       productCost,
-      totalCost: productCost + laborCost
+      totalCost: productCost
     };
 
     if (editingApplicationKey) {
@@ -3679,7 +3826,7 @@ function bindForms() {
     const kgHarvested = parseDecimal(values.kgHarvested);
     const priceTon = parseDecimal(values.priceTon);
     const otherCosts = parseDecimal(values.otherCosts);
-    const applicationCosts = applicationCostForLot(values.lotId);
+    const applicationCosts = applicationCostForLot(values.lotId, values.campaign);
     const income = (kgHarvested / 1000) * priceTon;
     const existing = editingClosureFormId
       ? data.closures.find((closure) => closure.id === editingClosureFormId)
@@ -3696,6 +3843,7 @@ function bindForms() {
       priceTon,
       otherCosts,
       applicationCosts,
+      applicationCostsManual: false,
       income,
       grossMargin: income - otherCosts - applicationCosts
     };
