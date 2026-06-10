@@ -48,6 +48,7 @@ let applicationDraftOrderId = "";
 let editingLotId = "";
 let editingProductId = "";
 let selectedProductId = "";
+let selectedCostLotId = "";
 let editingReceiptIndex = -1;
 let editingOrderId = "";
 let editingMonitorId = "";
@@ -85,6 +86,7 @@ const titles = {
   stock: "Depósito",
   "ficha-deposito": "Ficha del insumo",
   costos: "Costos por lote",
+  "ficha-costos-lote": "Costos del lote",
   rotacion: "Rotación de cultivos",
   historico: "Panel histórico",
   "ficha-historico-cultivo": "Histórico por cultivo",
@@ -99,8 +101,9 @@ const titles = {
 function loadData() {
   const saved = safeStorageGet(storageKey);
   const base = window.APP_DATA ? { ...structuredClone(starterData), ...structuredClone(window.APP_DATA) } : structuredClone(starterData);
-  if (saved) return { ...base, ...JSON.parse(saved) };
-  return base;
+  const loaded = saved ? { ...base, ...JSON.parse(saved) } : base;
+  loaded.applications = uniqueApplicationRows(loaded.applications || []);
+  return loaded;
 }
 
 function saveData() {
@@ -393,12 +396,14 @@ function mergeRemoteData(remote) {
         current.push(cleanRow);
       }
     });
-    data[table] = current.filter((item) => {
+    const filtered = current.filter((item) => {
       if (!item?.id) return false;
       if (item._syncStatus === "pending" || item._syncStatus === "delete-pending") return true;
       return remoteKeys.has(recordMergeKey(table, item));
     });
+    data[table] = table === "applications" ? uniqueApplicationRows(filtered) : filtered;
   });
+  data.products.forEach(recalculateApplicationsForProduct);
 }
 
 function recordMergeKey(table, row) {
@@ -502,13 +507,56 @@ function receiptEntries(product) {
   );
 }
 
+function datedReceiptEntries(product) {
+  return receiptEntries(product)
+    .filter((entry) => entry.detailed && entry.date)
+    .map((entry) => ({ ...entry, parsedUnitCost: parseDecimal(entry.unitCost) }))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+function unitCostForProductDate(product, date, fallbackCost = "") {
+  if (!product) return parseDecimal(fallbackCost);
+  const dated = datedReceiptEntries(product);
+  const eligible = dated.filter((entry) => !date || entry.date <= date);
+  if (eligible.length) return eligible[eligible.length - 1].parsedUnitCost;
+  if (fallbackCost !== "" && fallbackCost != null) return parseDecimal(fallbackCost);
+  if (dated.length) return dated[0].parsedUnitCost;
+  return parseDecimal(product.unitCost);
+}
+
+function refreshProductCurrentUnitCost(product) {
+  const latest = datedReceiptEntries(product).at(-1);
+  if (latest) product.unitCost = latest.parsedUnitCost;
+}
+
+function applicationPricingDate(application) {
+  return orderById(application.orderId)?.date || application.date || "";
+}
+
+function applicationProduct(application) {
+  return data.products.find((product) => productMatchesApplication(product, application));
+}
+
+function applicationUnitCost(application) {
+  return unitCostForProductDate(applicationProduct(application), applicationPricingDate(application), application.unitCost);
+}
+
+function applicationProductCost(application) {
+  return applicationQuantity(application) * applicationUnitCost(application);
+}
+
 function receiptLabels(product) {
   return [...new Set(receiptEntries(product).map((entry) => entry.number).filter(Boolean))];
 }
 
+function receiptQuantityTotal(product) {
+  return receiptEntriesForProduct(product)
+    .filter((entry) => entry.detailed)
+    .reduce((sum, entry) => sum + parseDecimal(entry.quantity), 0);
+}
+
 function appendReceiptEntry(current, receiptNumber, receiptDate, quantity, unitCost) {
-  const incoming = String(receiptNumber || "").trim();
-  if (!incoming) return String(current || "").trim();
+  const incoming = String(receiptNumber || "").trim() || "Sin remito";
   const entry = [incoming, receiptDate || todayValue(), parseDecimal(quantity), parseDecimal(unitCost)].join("|");
   return [String(current || "").trim(), entry].filter(Boolean).join("\n");
 }
@@ -621,7 +669,13 @@ function productMatchesApplication(product, application) {
 }
 
 function baseStock(product) {
-  return parseDecimal(product.quantity ?? product.calculatedStock);
+  if (product?.quantity !== undefined && product?.quantity !== null && product?.quantity !== "") {
+    return parseDecimal(product.quantity);
+  }
+  if (product?.calculatedStock !== undefined && product?.calculatedStock !== null && product?.calculatedStock !== "") {
+    return parseDecimal(product.calculatedStock);
+  }
+  return receiptQuantityTotal(product);
 }
 
 function applicationQuantity(application) {
@@ -630,9 +684,25 @@ function applicationQuantity(application) {
   return parseDecimal(application.dose) * parseDecimal(application.hectares);
 }
 
+function uniqueApplicationRows(rows = data.applications) {
+  const unique = new Map();
+  rows.forEach((row) => {
+    const key = applicationKey(row);
+    const existing = unique.get(key);
+    if (!existing || row._syncStatus === "pending" || row._syncStatus === "delete-pending") {
+      unique.set(key, row);
+    }
+  });
+  return Array.from(unique.values());
+}
+
+function cleanStockValue(value) {
+  return Math.abs(value) < 0.005 ? 0 : value;
+}
+
 function stockForProduct(product) {
   const base = productGroupProducts(product).reduce((sum, item) => sum + baseStock(item), 0);
-  const movements = data.applications.filter((application) => productMatchesApplication(product, application));
+  const movements = uniqueApplicationRows().filter((application) => productMatchesApplication(product, application));
   const totals = movements.reduce((acc, application) => {
     const order = orderById(application.orderId);
     const quantity = applicationQuantity(application);
@@ -647,9 +717,9 @@ function stockForProduct(product) {
   }, { consumed: 0, reserved: 0, cancelled: 0 });
 
   return {
-    physical: base - totals.consumed,
-    reserved: totals.reserved,
-    available: base - totals.consumed - totals.reserved,
+    physical: cleanStockValue(base - totals.consumed),
+    reserved: cleanStockValue(totals.reserved),
+    available: cleanStockValue(base - totals.consumed - totals.reserved),
     consumed: totals.consumed
   };
 }
@@ -2060,11 +2130,18 @@ function recalculateApplicationsForProduct(product) {
     if (!productMatchesApplication(product, application)) return;
     const usedQuantity = applicationQuantity(application);
     const laborCostTotal = parseDecimal(application.laborCostTotal);
+    const previousUnitCost = parseDecimal(application.unitCost);
+    const previousProductCost = parseDecimal(application.productCost);
+    const previousTotalCost = parseDecimal(application.totalCost);
     application.productName = product.name;
-    application.unitCost = parseDecimal(product.unitCost);
+    application.unitCost = unitCostForProductDate(product, applicationPricingDate(application), application.unitCost);
     application.productCost = usedQuantity * application.unitCost;
     application.totalCost = application.productCost + laborCostTotal;
-    queueSync("applications", application, "update");
+    if (
+      Math.abs(previousUnitCost - application.unitCost) > 0.005
+      || Math.abs(previousProductCost - application.productCost) > 0.005
+      || Math.abs(previousTotalCost - application.totalCost) > 0.005
+    ) queueSync("applications", application, "update");
   });
 }
 
@@ -2076,10 +2153,11 @@ function editProduct(productId) {
   form.elements.name.value = product.name || "";
   form.elements.type.value = product.type || "Otro";
   form.elements.unit.value = product.unit || "";
-  form.elements.quantity.value = product.quantity ?? "";
+  form.elements.quantity.value = baseStock(product);
   form.elements.unitCost.value = product.unitCost ?? "";
   form.elements.warehouse.value = product.warehouse || "";
   form.elements.receiptNumber.value = "";
+  form.elements.receiptDate.required = false;
   document.querySelector("#productFormTitle").textContent = "Editar producto";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Stock físico total ";
   form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
@@ -2091,6 +2169,10 @@ function cancelProductEdit() {
   const form = document.querySelector("#productForm");
   editingProductId = "";
   if (form) resetForm(form);
+  if (form) {
+    form.elements.receiptDate.required = true;
+    form.elements.receiptDate.value = todayValue();
+  }
   document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   if (form) form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
@@ -2132,11 +2214,13 @@ function saveReceiptEdit(index) {
   const nextQuantity = parseDecimal(values.quantity);
   const previousQuantity = parseDecimal(previous.quantity);
   targetEntries[previous.sourceIndex] = { number: values.number.trim(), date: values.date, quantity: nextQuantity, unitCost: parseDecimal(values.unitCost), detailed: true };
-  targetProduct.quantity = parseDecimal(targetProduct.quantity) + nextQuantity - previousQuantity;
+  targetProduct.quantity = baseStock(targetProduct) + nextQuantity - previousQuantity;
   targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+  refreshProductCurrentUnitCost(targetProduct);
   delete targetProduct.calculatedStock;
   delete targetProduct.applicationUse;
   queueSync("products", targetProduct, "update");
+  recalculateApplicationsForProduct(targetProduct);
   saveData();
   editingReceiptIndex = -1;
   renderAll();
@@ -2156,11 +2240,13 @@ function deleteReceipt(index) {
     : "Es un antecedente sin cantidad discriminada: se quitará el número de remito sin modificar el stock.";
   if (!window.confirm(`¿Eliminar el remito ${removed.number}?\n\n${detail}`)) return;
   targetEntries.splice(removed.sourceIndex, 1);
-  if (removed.detailed) targetProduct.quantity = parseDecimal(targetProduct.quantity) - parseDecimal(removed.quantity);
+  if (removed.detailed) targetProduct.quantity = baseStock(targetProduct) - parseDecimal(removed.quantity);
   targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+  refreshProductCurrentUnitCost(targetProduct);
   delete targetProduct.calculatedStock;
   delete targetProduct.applicationUse;
   queueSync("products", targetProduct, "update");
+  recalculateApplicationsForProduct(targetProduct);
   saveData();
   editingReceiptIndex = -1;
   renderAll();
@@ -2263,6 +2349,9 @@ function renderProductDetail() {
 function renderProducts() {
   const nameFilter = normalizeName(document.querySelector("#productNameFilter")?.value);
   const receiptFilter = normalizeName(document.querySelector("#productReceiptFilter")?.value);
+  const dateFrom = document.querySelector("#productReceiptDateFrom")?.value || "";
+  const dateTo = document.querySelector("#productReceiptDateTo")?.value || "";
+  const dateSort = document.querySelector("#productReceiptDateSort")?.value || "desc";
   const productsForDisplay = displayProducts();
   const catalog = [...new Set(productsForDisplay.map((product) => product.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const catalogList = document.querySelector("#productCatalogList");
@@ -2273,6 +2362,10 @@ function renderProducts() {
   const filteredProducts = productsForDisplay.filter((product) => {
     if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
     if (receiptFilter && !normalizeName(receiptLabels(product).join(" ")).includes(receiptFilter)) return false;
+    const dated = datedReceiptEntries(product);
+    if (dateFrom && !dated.some((entry) => entry.date >= dateFrom)) return false;
+    if (dateTo && !dated.some((entry) => entry.date <= dateTo)) return false;
+    if (dateFrom && dateTo && !dated.some((entry) => entry.date >= dateFrom && entry.date <= dateTo)) return false;
     return true;
   });
 
@@ -2296,6 +2389,33 @@ function renderProducts() {
     })
     .join("") || `<tr><td colspan="10">No hay productos para mostrar.</td></tr>`;
 
+  const purchases = productsForDisplay.flatMap((product) =>
+    receiptEntries(product)
+      .filter((entry) => entry.detailed)
+      .map((entry) => ({ ...entry, product }))
+  ).filter((entry) => {
+    if (nameFilter && !normalizeName(entry.product.name).includes(nameFilter)) return false;
+    if (receiptFilter && !normalizeName(entry.number).includes(receiptFilter)) return false;
+    if (dateFrom && (!entry.date || entry.date < dateFrom)) return false;
+    if (dateTo && (!entry.date || entry.date > dateTo)) return false;
+    return true;
+  }).sort((a, b) => {
+    const comparison = String(a.date || "").localeCompare(String(b.date || ""));
+    return dateSort === "asc" ? comparison : -comparison;
+  });
+
+  document.querySelector("#purchasesByDateTable").innerHTML = purchases.map((entry) => `
+    <tr class="clickable-row" data-open-product="${entry.product.id}">
+      <td>${dateShort(entry.date)}</td>
+      <td>${entry.product.name}</td>
+      <td>${entry.number || "-"}</td>
+      <td>${number(entry.quantity, 2)} ${entry.product.unit || ""}</td>
+      <td>${money(entry.unitCost)}</td>
+      <td>${money(parseDecimal(entry.quantity) * parseDecimal(entry.unitCost))}</td>
+      <td>${entry.product.warehouse || "-"}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="7">No hay compras para los filtros seleccionados.</td></tr>`;
+
   document.querySelectorAll("[data-edit-product]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -2303,6 +2423,14 @@ function renderProducts() {
     });
   });
   document.querySelectorAll("#productsTable tr[data-open-product]").forEach((row) => {
+    row.addEventListener("click", () => {
+      selectedProductId = row.dataset.openProduct;
+      editingReceiptIndex = -1;
+      renderProductDetail();
+      switchView("ficha-deposito");
+    });
+  });
+  document.querySelectorAll("#purchasesByDateTable tr[data-open-product]").forEach((row) => {
     row.addEventListener("click", () => {
       selectedProductId = row.dataset.openProduct;
       editingReceiptIndex = -1;
@@ -2329,19 +2457,46 @@ function buildLotCosts() {
     fertilizers: 0,
     seeds: 0,
     others: 0,
-    total: 0
+    total: 0,
+    entries: []
   }]));
 
   const laborSeen = new Set();
-  data.applications.forEach((application) => {
+  uniqueApplicationRows(data.applications).forEach((application) => {
     if (!byLot.has(application.lotId)) return;
     const item = byLot.get(application.lotId);
     const category = costCategory(productType(application.productId));
-    item[category] += Number(application.productCost || 0);
+    const productCost = applicationProductCost(application);
+    const unitCost = applicationUnitCost(application);
+    const order = orderById(application.orderId);
+    item[category] += productCost;
+    item.entries.push({
+      date: applicationPricingDate(application),
+      orderId: application.orderId || "-",
+      task: order?.task || "Aplicación",
+      description: application.productName || productName(application.productId),
+      category,
+      quantity: applicationQuantity(application),
+      unit: applicationProduct(application)?.unit || "",
+      unitCost,
+      total: productCost
+    });
 
-    const laborKey = application.id || `${application.orderId}-${application.lotId}`;
+    const laborKey = `${application.id || application.orderId || "labor"}|${application.lotId}`;
     if (laborKey && !laborSeen.has(laborKey)) {
-      item.labor += Number(application.laborCostTotal || 0);
+      const laborTotal = Number(application.laborCostTotal || 0);
+      item.labor += laborTotal;
+      if (laborTotal) item.entries.push({
+        date: applicationPricingDate(application),
+        orderId: application.orderId || "-",
+        task: order?.task || "Labor / servicio",
+        description: "Labor / servicio",
+        category: "labor",
+        quantity: parseDecimal(application.hectares),
+        unit: "ha",
+        unitCost: parseDecimal(application.laborCostHa),
+        total: laborTotal
+      });
       laborSeen.add(laborKey);
     }
   });
@@ -2382,7 +2537,7 @@ function renderCosts() {
     ].filter((part) => part[1] > 0);
 
     return `
-      <article class="cost-card">
+      <article class="cost-card" data-open-cost-lot="${row.lot.id}">
         <div class="cost-card-head">
           <div><strong>${displayLotName(row.lot)}</strong><span>${row.lot.farm} · ${row.lot.campaign || "-"} · ${number(row.lot.hectares, 2)} ha</span></div>
           <b>${money(row.total)}</b>
@@ -2398,7 +2553,7 @@ function renderCosts() {
   }).join("") || `<div class="empty">Todavía no hay costos cargados.</div>`;
 
   document.querySelector("#costTable").innerHTML = rows.map((row) => `
-    <tr>
+    <tr class="clickable-row" data-open-cost-lot="${row.lot.id}">
       <td>${displayLotName(row.lot)}</td>
       <td>${row.lot.campaign || "-"}</td>
       <td>${number(row.lot.hectares, 2)}</td>
@@ -2411,6 +2566,63 @@ function renderCosts() {
       <td>${money(row.total / row.lot.hectares)}</td>
     </tr>
   `).join("") || `<tr><td colspan="10">Todavía no hay costos cargados.</td></tr>`;
+
+  document.querySelectorAll("[data-open-cost-lot]").forEach((element) => {
+    element.addEventListener("click", () => openLotCostDetail(element.dataset.openCostLot));
+  });
+  if (selectedCostLotId) renderLotCostDetail();
+}
+
+function costCategoryLabel(category) {
+  return ({ labor: "Labor", herbicides: "Herbicidas", fertilizers: "Fertilizantes", seeds: "Semillas", others: "Otros" })[category] || "Otros";
+}
+
+function openLotCostDetail(lotId) {
+  selectedCostLotId = lotId;
+  renderLotCostDetail();
+  switchView("ficha-costos-lote");
+}
+
+function renderLotCostDetail() {
+  const detail = document.querySelector("#lotCostDetail");
+  if (!detail) return;
+  const row = buildLotCosts().find((item) => item.lot.id === selectedCostLotId);
+  if (!row) {
+    detail.innerHTML = `<div class="empty">No hay costos cargados para este lote.</div>`;
+    return;
+  }
+  const hectares = parseDecimal(row.lot.hectares);
+  const entries = [...row.entries].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  detail.innerHTML = `
+    <div class="application-detail-head">
+      <div>
+        <span class="eyebrow">Costos del lote</span>
+        <h2>${displayLotName(row.lot)}</h2>
+        <p>${row.lot.farm || "-"} · ${row.lot.campaign || "-"} · ${number(hectares, 2)} ha</p>
+      </div>
+      <button class="link-button" id="backToCosts" type="button">Volver a costos</button>
+    </div>
+    <div class="cost-detail-summary">
+      <article><span>Total acumulado</span><strong>${money(row.total)}</strong></article>
+      <article><span>Total por hectárea</span><strong>${money(hectares ? row.total / hectares : 0)}</strong></article>
+      <article><span>Labores</span><strong>${money(row.labor)}</strong></article>
+      <article><span>Insumos</span><strong>${money(row.total - row.labor)}</strong></article>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Fecha</th><th>Orden</th><th>Labor</th><th>Concepto</th><th>Rubro</th><th>Cantidad</th><th>Costo unit.</th><th>Total</th><th>u$s/ha</th></tr></thead>
+        <tbody>${entries.map((entry) => `
+          <tr>
+            <td>${dateShort(entry.date)}</td><td>${entry.orderId}</td><td>${entry.task}</td>
+            <td>${entry.description}</td><td>${costCategoryLabel(entry.category)}</td>
+            <td>${number(entry.quantity, 2)} ${entry.unit}</td><td>${money(entry.unitCost)}</td>
+            <td>${money(entry.total)}</td><td>${money(hectares ? entry.total / hectares : 0)}</td>
+          </tr>
+        `).join("")}</tbody>
+      </table>
+    </div>
+  `;
+  detail.querySelector("#backToCosts")?.addEventListener("click", () => switchView("costos"));
 }
 
 function cropClass(crop) {
@@ -3098,6 +3310,10 @@ function bindForms() {
       ? data.products.find((product) => product.id === editingProductId)
       : matchingProductByName(values.name);
     const isNewIngreso = !editingProductId && Boolean(existing);
+    if (!editingProductId && !values.receiptDate) {
+      showToast("Indicá la fecha de compra o del remito");
+      return;
+    }
     if (!editingProductId && existing && values.receiptNumber && hasReceiptNumber(existing, values.receiptNumber)) {
       showToast("Ese remito ya está cargado para este producto");
       return;
@@ -3109,7 +3325,7 @@ function bindForms() {
       ...(existing || {}),
       id: existing?.id || uid("prod"),
       ...values,
-      quantity: isNewIngreso ? parseDecimal(existing.quantity) + parseDecimal(values.quantity) : parseDecimal(values.quantity),
+      quantity: isNewIngreso ? baseStock(existing) + parseDecimal(values.quantity) : parseDecimal(values.quantity),
       unitCost: parseDecimal(values.unitCost),
       receiptNumbers
     };
@@ -3129,6 +3345,7 @@ function bindForms() {
     saveData();
     editingProductId = "";
     resetForm(event.currentTarget);
+    event.currentTarget.elements.receiptDate.required = true;
     event.currentTarget.elements.receiptDate.value = todayValue();
     document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
     document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
@@ -3141,6 +3358,9 @@ function bindForms() {
   document.querySelector("#productForm")?.elements?.name?.addEventListener("change", applyExistingProductDefaults);
   document.querySelector("#productNameFilter")?.addEventListener("input", renderProducts);
   document.querySelector("#productReceiptFilter")?.addEventListener("input", renderProducts);
+  document.querySelector("#productReceiptDateFrom")?.addEventListener("change", renderProducts);
+  document.querySelector("#productReceiptDateTo")?.addEventListener("change", renderProducts);
+  document.querySelector("#productReceiptDateSort")?.addEventListener("change", renderProducts);
   document.querySelector("#productForm").elements.receiptDate.value = todayValue();
 
   const orderForm = document.querySelector("#orderForm");
@@ -3282,10 +3502,12 @@ function bindForms() {
     const dose = totalQuantity && hectares ? totalQuantity / hectares : parseDecimal(values.dose);
     const laborCostHa = parseDecimal(values.laborCostHa);
     const usedQuantity = totalQuantity || dose * hectares;
-    const productCost = usedQuantity * Number(product?.unitCost || 0);
+    const previousRow = editingApplicationKey ? findApplicationByKey(editingApplicationKey) : null;
+    const pricingDate = orderById(values.orderId)?.date || values.date || "";
+    const unitCost = unitCostForProductDate(product, pricingDate, previousRow?.unitCost);
+    const productCost = usedQuantity * unitCost;
     const laborCost = laborCostHa * hectares;
 
-    const previousRow = editingApplicationKey ? findApplicationByKey(editingApplicationKey) : null;
     const linkedApplicationId = values.orderId ? firstApplicationIdForOrder(values.orderId) : "";
     const idTakenByOtherOrder = Boolean(values.id && values.orderId && data.applications.some((application) => (
       application.id === values.id && application.orderId && application.orderId !== values.orderId
@@ -3305,7 +3527,7 @@ function bindForms() {
       laborCostHa,
       laborCostTotal: laborCost,
       usedQuantity,
-      unitCost: Number(product?.unitCost || 0),
+      unitCost,
       productName: product?.name || "",
       productCost,
       totalCost: productCost + laborCost

@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260605-aplicacion-orden-cultivo" />
+    <link rel="stylesheet" href="styles.css?v=20260609-precios-fecha-costos-lote" />
   </head>
   <body>
     <div class="app-shell">
@@ -357,7 +357,7 @@
               <label>Costo unitario <input name="unitCost" type="text" inputmode="decimal" required /></label>
               <label>Depósito <input name="warehouse" placeholder="Galpón principal" /></label>
               <label>Nro. de remito <input name="receiptNumber" placeholder="Ej. R-1548" /></label>
-              <label>Fecha de remito <input name="receiptDate" type="date" /></label>
+              <label>Fecha de compra/remito <input name="receiptDate" type="date" required /></label>
               <div class="form-actions">
                 <button type="submit">Guardar ingreso</button>
                 <button class="link-button hidden-panel" id="cancelProductEdit" type="button">Cancelar edición</button>
@@ -370,6 +370,14 @@
               <div class="deposit-filters">
                 <label>Producto <input id="productNameFilter" list="productCatalogList" placeholder="Todos" /></label>
                 <label>Remito <input id="productReceiptFilter" list="receiptCatalogList" placeholder="Todos" /></label>
+                <label>Desde <input id="productReceiptDateFrom" type="date" /></label>
+                <label>Hasta <input id="productReceiptDateTo" type="date" /></label>
+                <label>Orden
+                  <select id="productReceiptDateSort">
+                    <option value="desc">Más recientes</option>
+                    <option value="asc">Más antiguas</option>
+                  </select>
+                </label>
               </div>
             </div>
             <div class="table-wrap">
@@ -389,6 +397,28 @@
                   </tr>
                 </thead>
                 <tbody id="productsTable"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Compras e ingresos por fecha</h2>
+              <span class="panel-note">Precios históricos según fecha de compra o remito</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Producto</th>
+                    <th>Remito</th>
+                    <th>Cantidad</th>
+                    <th>Costo unit.</th>
+                    <th>Total</th>
+                    <th>Depósito</th>
+                  </tr>
+                </thead>
+                <tbody id="purchasesByDateTable"></tbody>
               </table>
             </div>
           </section>
@@ -432,6 +462,12 @@
                 <tbody id="costTable"></tbody>
               </table>
             </div>
+          </section>
+        </section>
+
+        <section class="view" id="ficha-costos-lote">
+          <section class="panel product-detail-panel">
+            <div id="lotCostDetail" class="application-detail"></div>
           </section>
         </section>
 
@@ -562,7 +598,7 @@
     <datalist id="taskList"></datalist>
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
-    <script src="data.js?v=20260605-aplicacion-orden-cultivo"></script>
-    <script src="app.js?v=20260605-aplicacion-orden-cultivo"></script>
+    <script src="data.js?v=20260609-auditoria-stock"></script>
+    <script src="app.js?v=20260609-precios-fecha-costos-lote"></script>
   </body>
 </html>
