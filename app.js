@@ -49,6 +49,7 @@ let editingLotId = "";
 let editingProductId = "";
 let selectedProductId = "";
 let selectedCostLotId = "";
+let selectedCostCategory = "";
 let editingReceiptIndex = -1;
 let editingOrderId = "";
 let editingMonitorId = "";
@@ -87,6 +88,7 @@ const titles = {
   "ficha-deposito": "Ficha del insumo",
   costos: "Costos por lote",
   "ficha-costos-lote": "Costos del lote",
+  "ficha-costos-rubro": "Detalle de costos",
   rotacion: "Rotación de cultivos",
   historico: "Panel histórico",
   "ficha-historico-cultivo": "Histórico por cultivo",
@@ -1322,7 +1324,7 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
 
   const closures = lot ? data.closures.filter((closure) => sameLot(closure, lot)) : [];
   const lastClosure = closures.slice().sort((a, b) => String(b.campaign || "").localeCompare(String(a.campaign || "")))[0];
-  const orders = lot ? data.orders.filter((order) => order.lotId === lot.id).sort((a, b) => String(b.date).localeCompare(String(a.date))) : [];
+  const orders = lot ? data.orders.filter((order) => sameLot(order, lot)).sort((a, b) => String(b.date).localeCompare(String(a.date))) : [];
   const pendingOrders = orders.filter((order) => order.status !== "Finalizada" && order.status !== "Cancelada").length;
   const orderCosts = buildOrderCosts(lot.id);
   const totalSpent = Array.from(orderCosts.values()).reduce((sum, item) => sum + item.total, 0);
@@ -1353,8 +1355,8 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
         ${lotOutline}
       </div>
       <div class="map-subsection">
-        <h3>Últimas órdenes</h3>
-        ${orders.length ? orders.slice(0, 5).map((order) => `
+        <h3>Órdenes del lote</h3>
+        ${orders.length ? orders.map((order) => `
           <div class="map-row clickable-card" data-open-order-detail="${order.id}">
             <div>
               <b>${order.task}</b>
@@ -1401,24 +1403,26 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
 
 function buildOrderCosts(lotId) {
   const costs = new Map();
+  const lot = data.lots.find((item) => item.id === lotId);
 
-  data.orders.filter((order) => order.lotId === lotId).forEach((order) => {
+  data.orders.filter((order) => lot && sameLot(order, lot)).forEach((order) => {
+    const labor = laborCostForOrder(order);
     costs.set(order.id, {
       product: 0,
-      labor: Number(order.laborCostTotal || 0),
-      total: Number(order.laborCostTotal || 0),
-      hectares: Number(order.plannedHectares || 0)
+      labor,
+      total: labor,
+      hectares: Number(order.plannedHectares || order.Hectareas_planificadas || 0)
     });
   });
 
   const seenLabor = new Set();
-  data.applications.filter((application) => application.lotId === lotId).forEach((application) => {
+  uniqueApplicationRows(data.applications).filter((application) => lot && sameLot(application, lot)).forEach((application) => {
     const key = application.orderId || application.id;
     const item = costs.get(key) || { product: 0, labor: 0, total: 0, hectares: Number(application.hectares || 0) };
-    item.product += Number(application.productCost || 0);
+    item.product += applicationProductCost(application);
     item.hectares = item.hectares || Number(application.hectares || 0);
 
-    if (!costs.has(key) && application.laborCostTotal && !seenLabor.has(application.id)) {
+    if (!orderById(application.orderId) && application.laborCostTotal && !seenLabor.has(application.id)) {
       item.labor += Number(application.laborCostTotal || 0);
       seenLabor.add(application.id);
     }
@@ -2362,10 +2366,6 @@ function renderProducts() {
   const filteredProducts = productsForDisplay.filter((product) => {
     if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
     if (receiptFilter && !normalizeName(receiptLabels(product).join(" ")).includes(receiptFilter)) return false;
-    const dated = datedReceiptEntries(product);
-    if (dateFrom && !dated.some((entry) => entry.date >= dateFrom)) return false;
-    if (dateTo && !dated.some((entry) => entry.date <= dateTo)) return false;
-    if (dateFrom && dateTo && !dated.some((entry) => entry.date >= dateFrom && entry.date <= dateTo)) return false;
     return true;
   });
 
@@ -2445,7 +2445,7 @@ function costCategory(type) {
   const normalized = normalizeName(type);
   if (normalized.includes("herbicida")) return "herbicides";
   if (normalized.includes("fertilizante")) return "fertilizers";
-  if (normalized.includes("semilla") || normalized.includes("inoculante")) return "seeds";
+  if (normalized.includes("semilla") || normalized.includes("inoculante") || normalized.includes("curasemilla")) return "seeds";
   return "others";
 }
 
@@ -2461,7 +2461,28 @@ function buildLotCosts() {
     entries: []
   }]));
 
-  const laborSeen = new Set();
+  data.orders.forEach((order) => {
+    if (order.status === "Cancelada") return;
+    const lot = findLot(order);
+    const item = lot ? byLot.get(lot.id) : null;
+    const laborTotal = laborCostForOrder(order);
+    if (!item) return;
+    const hectares = parseDecimal(order.plannedHectares || order.Hectareas_planificadas);
+    item.labor += laborTotal;
+    item.entries.push({
+      date: order.date || "",
+      orderId: order.id || "-",
+      task: order.task || "Labor / servicio",
+      description: order.owner ? `Labor / servicio · ${order.owner}` : "Labor / servicio",
+      category: "labor",
+      quantity: hectares,
+      unit: "ha",
+      unitCost: hectares ? laborTotal / hectares : parseDecimal(order.laborCostHa),
+      total: laborTotal,
+      pendingCost: !laborTotal
+    });
+  });
+
   uniqueApplicationRows(data.applications).forEach((application) => {
     if (!byLot.has(application.lotId)) return;
     const item = byLot.get(application.lotId);
@@ -2482,8 +2503,7 @@ function buildLotCosts() {
       total: productCost
     });
 
-    const laborKey = `${application.id || application.orderId || "labor"}|${application.lotId}`;
-    if (laborKey && !laborSeen.has(laborKey)) {
+    if (!order) {
       const laborTotal = Number(application.laborCostTotal || 0);
       item.labor += laborTotal;
       if (laborTotal) item.entries.push({
@@ -2497,7 +2517,6 @@ function buildLotCosts() {
         unitCost: parseDecimal(application.laborCostHa),
         total: laborTotal
       });
-      laborSeen.add(laborKey);
     }
   });
 
@@ -2521,10 +2540,10 @@ function renderCosts() {
   }, { labor: 0, herbicides: 0, fertilizers: 0, seeds: 0, others: 0, total: 0 });
 
   document.querySelector("#costSummary").innerHTML = `
-    <article><span>Total costos</span><strong>${money(totals.total)}</strong></article>
-    <article><span>Labores</span><strong>${money(totals.labor)}</strong></article>
-    <article><span>Herbicidas</span><strong>${money(totals.herbicides)}</strong></article>
-    <article><span>Semillas/Fert.</span><strong>${money(totals.seeds + totals.fertilizers)}</strong></article>
+    <article class="clickable-card" data-open-cost-category="all"><span>Total costos</span><strong>${money(totals.total)}</strong></article>
+    <article class="clickable-card" data-open-cost-category="labor"><span>Labores</span><strong>${money(totals.labor)}</strong></article>
+    <article class="clickable-card" data-open-cost-category="herbicides"><span>Herbicidas</span><strong>${money(totals.herbicides)}</strong></article>
+    <article class="clickable-card" data-open-cost-category="seeds-fertilizers"><span>Semillas/Fert.</span><strong>${money(totals.seeds + totals.fertilizers)}</strong></article>
   `;
 
   document.querySelector("#costCards").innerHTML = rows.map((row) => {
@@ -2570,7 +2589,11 @@ function renderCosts() {
   document.querySelectorAll("[data-open-cost-lot]").forEach((element) => {
     element.addEventListener("click", () => openLotCostDetail(element.dataset.openCostLot));
   });
+  document.querySelectorAll("[data-open-cost-category]").forEach((element) => {
+    element.addEventListener("click", () => openCostCategoryDetail(element.dataset.openCostCategory));
+  });
   if (selectedCostLotId) renderLotCostDetail();
+  if (selectedCostCategory) renderCostCategoryDetail();
 }
 
 function costCategoryLabel(category) {
@@ -2581,6 +2604,70 @@ function openLotCostDetail(lotId) {
   selectedCostLotId = lotId;
   renderLotCostDetail();
   switchView("ficha-costos-lote");
+}
+
+function costCategoryTitle(category) {
+  return ({
+    all: "Todos los costos",
+    labor: "Labores",
+    herbicides: "Herbicidas",
+    "seeds-fertilizers": "Semillas y fertilizantes"
+  })[category] || "Detalle de costos";
+}
+
+function openCostCategoryDetail(category) {
+  selectedCostCategory = category;
+  renderCostCategoryDetail();
+  switchView("ficha-costos-rubro");
+}
+
+function renderCostCategoryDetail() {
+  const detail = document.querySelector("#costCategoryDetail");
+  if (!detail) return;
+  const rows = buildLotCosts();
+  const categories = selectedCostCategory === "seeds-fertilizers"
+    ? ["seeds", "fertilizers"]
+    : [selectedCostCategory];
+  const entries = rows.flatMap((row) => row.entries
+    .filter((entry) => selectedCostCategory === "all" || categories.includes(entry.category))
+    .map((entry) => ({ ...entry, lot: row.lot })))
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const total = entries.reduce((sum, entry) => sum + (entry.pendingCost ? 0 : parseDecimal(entry.total)), 0);
+  const lots = new Set(entries.map((entry) => entry.lot.id)).size;
+  detail.innerHTML = `
+    <div class="application-detail-head">
+      <div>
+        <span class="eyebrow">Detalle por rubro</span>
+        <h2>${costCategoryTitle(selectedCostCategory)}</h2>
+        <p>${entries.length} movimientos en ${lots} lotes</p>
+      </div>
+      <button class="link-button" id="backToCostsFromCategory" type="button">Volver a costos</button>
+    </div>
+    <div class="cost-detail-summary">
+      <article><span>Total</span><strong>${money(total)}</strong></article>
+      <article><span>Lotes</span><strong>${lots}</strong></article>
+      <article><span>Movimientos</span><strong>${entries.length}</strong></article>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Fecha</th><th>Lote</th><th>Orden</th><th>Labor</th><th>Concepto</th><th>Rubro</th><th>Cantidad</th><th>Costo unit.</th><th>Total</th><th>u$s/ha</th></tr></thead>
+        <tbody>${entries.map((entry) => {
+          const hectares = parseDecimal(entry.lot.hectares);
+          return `
+            <tr>
+              <td>${dateShort(entry.date)}</td><td>${displayLotName(entry.lot)}</td><td>${entry.orderId}</td><td>${entry.task}</td>
+              <td>${entry.description}</td><td>${costCategoryLabel(entry.category)}</td>
+              <td>${number(entry.quantity, 2)} ${entry.unit}</td>
+              <td>${entry.pendingCost ? "Pendiente" : money(entry.unitCost)}</td>
+              <td>${entry.pendingCost ? "Pendiente" : money(entry.total)}</td>
+              <td>${entry.pendingCost ? "Pendiente" : money(hectares ? entry.total / hectares : 0)}</td>
+            </tr>
+          `;
+        }).join("") || `<tr><td colspan="10">No hay movimientos para este rubro.</td></tr>`}</tbody>
+      </table>
+    </div>
+  `;
+  detail.querySelector("#backToCostsFromCategory")?.addEventListener("click", () => switchView("costos"));
 }
 
 function renderLotCostDetail() {
@@ -2615,8 +2702,10 @@ function renderLotCostDetail() {
           <tr>
             <td>${dateShort(entry.date)}</td><td>${entry.orderId}</td><td>${entry.task}</td>
             <td>${entry.description}</td><td>${costCategoryLabel(entry.category)}</td>
-            <td>${number(entry.quantity, 2)} ${entry.unit}</td><td>${money(entry.unitCost)}</td>
-            <td>${money(entry.total)}</td><td>${money(hectares ? entry.total / hectares : 0)}</td>
+            <td>${number(entry.quantity, 2)} ${entry.unit}</td>
+            <td>${entry.pendingCost ? "Pendiente" : money(entry.unitCost)}</td>
+            <td>${entry.pendingCost ? "Pendiente" : money(entry.total)}</td>
+            <td>${entry.pendingCost ? "Pendiente" : money(hectares ? entry.total / hectares : 0)}</td>
           </tr>
         `).join("")}</tbody>
       </table>
@@ -3452,33 +3541,55 @@ function bindForms() {
 
   document.querySelector("#monitorForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const values = formData(event.currentTarget);
-    delete values.photoFile;
-    const existing = editingMonitorId ? data.monitors.find((monitor) => monitor.id === editingMonitorId) : null;
-    const photoFile = event.currentTarget.elements.photoFile.files?.[0];
-    const photo = await readImageAsDataUrl(photoFile);
-    const record = {
-      id: editingMonitorId || uid("mon"),
-      ...values,
-      photo: photo || existing?.photo || ""
-    };
-    if (editingMonitorId) {
-      const index = data.monitors.findIndex((monitor) => monitor.id === editingMonitorId);
-      if (index >= 0) {
-        data.monitors[index] = { ...data.monitors[index], ...record };
-        queueSync("monitors", data.monitors[index], "update");
-      }
-      editingMonitorId = "";
-      event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar monitoreo";
-    } else {
-      data.monitors.push(record);
-      queueSync("monitors", record);
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalLabel = submitButton?.textContent || "Guardar monitoreo";
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Guardando...";
     }
-    saveData();
-    resetForm(event.currentTarget);
-    renderAll();
-    openMonitorDetail(record.id);
-    showToast("Monitoreo guardado");
+    try {
+      const values = formData(form);
+      delete values.photoFile;
+      const existing = editingMonitorId ? data.monitors.find((monitor) => monitor.id === editingMonitorId) : null;
+      const photoFile = form.elements.photoFile.files?.[0];
+      const photo = await readImageAsDataUrl(photoFile);
+      if (photoFile && !photo) {
+        showToast("No se pudo procesar la foto. Probá elegirla nuevamente.");
+        return;
+      }
+      const record = {
+        id: editingMonitorId || uid("mon"),
+        ...values,
+        crop: values.crop || lotCrop(values.lotId),
+        variety: values.variety || lotVariety(values.lotId),
+        photo: photo || existing?.photo || ""
+      };
+      if (editingMonitorId) {
+        const index = data.monitors.findIndex((monitor) => monitor.id === editingMonitorId);
+        if (index >= 0) {
+          data.monitors[index] = { ...data.monitors[index], ...record };
+          queueSync("monitors", data.monitors[index], "update");
+        }
+        editingMonitorId = "";
+      } else {
+        data.monitors.push(record);
+        queueSync("monitors", record);
+      }
+      saveData();
+      resetForm(form);
+      if (form.elements.photoFile) form.elements.photoFile.value = "";
+      renderAll();
+      openMonitorDetail(record.id);
+      showToast("Monitoreo guardado");
+    } catch (error) {
+      showToast(error?.message || "No se pudo guardar el monitoreo");
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = editingMonitorId ? originalLabel : "Guardar monitoreo";
+      }
+    }
   });
 
   const closureForm = document.querySelector("#closureForm");
@@ -3834,9 +3945,11 @@ function bindMapUpload() {
 }
 
 function setToday() {
-  document.querySelectorAll('input[type="date"]').forEach((input) => {
+  document.querySelectorAll('input[type="date"]:not(#productReceiptDateFrom):not(#productReceiptDateTo)').forEach((input) => {
     input.valueAsDate = new Date();
   });
+  document.querySelector("#productReceiptDateFrom").value = "";
+  document.querySelector("#productReceiptDateTo").value = "";
 }
 
 function registerServiceWorker() {
