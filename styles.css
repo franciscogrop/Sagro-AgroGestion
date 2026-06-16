@@ -690,6 +690,47 @@ h2 {
   padding: 7px 8px;
 }
 
+.filter-clear-button {
+  padding: 7px 10px;
+  align-self: end;
+}
+
+.field-clear-button {
+  width: 28px;
+  height: 28px;
+  margin-left: -34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.field-clear-button:hover {
+  color: var(--red);
+  background: rgba(180, 55, 55, .08);
+}
+
+.deposit-product-lines {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+}
+
+.deposit-product-line {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(160px, 1fr) minmax(120px, .7fr) minmax(140px, .8fr) minmax(140px, .8fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+
 .cost-detail-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1723,6 +1764,10 @@ td {
   }
 
   .campaign-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .deposit-product-line {
     grid-template-columns: 1fr;
   }
 }

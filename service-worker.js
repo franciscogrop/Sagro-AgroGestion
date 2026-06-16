@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v75-integridad-costos-campanas";
+const CACHE_NAME = "gestion-agro-cache-v77-limpiar-filtros";
 const ASSETS = [
   "./",
   "./index.html",

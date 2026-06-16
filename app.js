@@ -619,13 +619,278 @@ function displayProducts() {
 
 function applyExistingProductDefaults() {
   if (editingProductId) return;
+  const input = document.activeElement?.name === "name" ? document.activeElement : document.querySelector("#productForm")?.elements?.name;
+  applyExistingProductDefaultsForLine(input?.closest(".deposit-product-line") || document.querySelector("#productForm"));
+}
+
+function applyExistingProductDefaultsForLine(line) {
   const form = document.querySelector("#productForm");
-  const product = matchingProductByName(form?.elements?.name?.value);
-  if (!form || !product) return;
-  form.elements.type.value = product.type || "Otro";
-  form.elements.unit.value = product.unit || "";
-  form.elements.unitCost.value = product.unitCost ?? "";
-  form.elements.warehouse.value = product.warehouse || "";
+  const nameInput = line?.querySelector?.('[name="name"]') || form?.elements?.name;
+  const product = matchingProductByName(nameInput?.value);
+  if (!form || !line || !product) return;
+  line.querySelector('[name="type"]').value = product.type || "Otro";
+  line.querySelector('[name="unit"]').value = product.unit || "";
+  line.querySelector('[name="unitCost"]').value = product.unitCost ?? "";
+  form.elements.warehouse.value = form.elements.warehouse.value || product.warehouse || "";
+}
+
+function depositProductLines() {
+  return Array.from(document.querySelectorAll("#productForm .deposit-product-line"));
+}
+
+function depositLineValues(line) {
+  return {
+    name: line.querySelector('[name="name"]')?.value?.trim() || "",
+    type: line.querySelector('[name="type"]')?.value || "Otro",
+    unit: line.querySelector('[name="unit"]')?.value?.trim() || "",
+    quantity: line.querySelector('[name="quantity"]')?.value || "",
+    unitCost: line.querySelector('[name="unitCost"]')?.value || ""
+  };
+}
+
+function findDepositProductMatch(values, excludedId = "") {
+  const target = productLogicalKey(values);
+  const exact = data.products.find((product) => product.id !== excludedId && productLogicalKey(product) === target);
+  if (exact) return exact;
+  return values.unit || values.warehouse ? null : matchingProductByName(values.name, excludedId);
+}
+
+function setDepositLineValues(line, values = {}) {
+  if (!line) return;
+  line.querySelector('[name="name"]').value = values.name || "";
+  line.querySelector('[name="type"]').value = values.type || "Otro";
+  line.querySelector('[name="unit"]').value = values.unit || "";
+  line.querySelector('[name="quantity"]').value = values.quantity ?? "";
+  line.querySelector('[name="unitCost"]').value = values.unitCost ?? "";
+}
+
+function syncDepositLineButtons() {
+  const lines = depositProductLines();
+  lines.forEach((line) => {
+    line.querySelector(".remove-deposit-line")?.classList.toggle("hidden-panel", editingProductId || lines.length <= 1);
+  });
+  document.querySelector("#addDepositProductLine")?.classList.toggle("hidden-panel", Boolean(editingProductId));
+}
+
+function addDepositProductLine(values = {}) {
+  const linesWrap = document.querySelector("#depositProductLines");
+  const template = depositProductLines()[0];
+  if (!linesWrap || !template) return;
+  const line = template.cloneNode(true);
+  setDepositLineValues(line, values);
+  line.querySelector('[name="name"]')?.addEventListener("change", () => applyExistingProductDefaultsForLine(line));
+  line.querySelector(".remove-deposit-line")?.addEventListener("click", () => {
+    line.remove();
+    syncDepositLineButtons();
+  });
+  linesWrap.appendChild(line);
+  syncDepositLineButtons();
+  line.querySelector('[name="name"]')?.focus();
+}
+
+function resetDepositProductLines() {
+  const lines = depositProductLines();
+  lines.slice(1).forEach((line) => line.remove());
+  setDepositLineValues(lines[0], {});
+  syncDepositLineButtons();
+}
+
+function initializeDepositFormLayout() {
+  const form = document.querySelector("#productForm");
+  if (!form || form.querySelector("#depositProductLines")) return;
+  const labelFor = (name) => form.elements[name]?.closest("label");
+  const productLabels = ["name", "type", "unit", "quantity", "unitCost"].map(labelFor).filter(Boolean);
+  const line = document.createElement("div");
+  line.className = "deposit-product-line";
+  productLabels[0].before(line);
+  productLabels.forEach((label) => line.appendChild(label));
+  const removeButton = document.createElement("button");
+  removeButton.className = "link-button danger hidden-panel remove-deposit-line";
+  removeButton.type = "button";
+  removeButton.textContent = "Quitar producto";
+  line.appendChild(removeButton);
+  const linesWrap = document.createElement("div");
+  linesWrap.id = "depositProductLines";
+  linesWrap.className = "deposit-product-lines";
+  line.before(linesWrap);
+  linesWrap.appendChild(line);
+  [labelFor("warehouse"), labelFor("receiptDate"), labelFor("receiptNumber")].filter(Boolean).reverse().forEach((label) => {
+    form.insertBefore(label, linesWrap);
+  });
+  form.elements.receiptNumber.required = true;
+  form.elements.warehouse.setAttribute("list", "warehouseCatalogList");
+  form.elements.warehouse.placeholder = "Elegí o escribí depósito";
+  form.elements.receiptNumber.closest("label").firstChild.textContent = "Nro. de remito/factura ";
+  let warehouseList = document.querySelector("#warehouseCatalogList");
+  if (!warehouseList) {
+    warehouseList = document.createElement("datalist");
+    warehouseList.id = "warehouseCatalogList";
+    document.body.appendChild(warehouseList);
+  }
+  const actions = form.querySelector(".form-actions");
+  if (actions && !document.querySelector("#addDepositProductLine")) {
+    const button = document.createElement("button");
+    button.className = "link-button";
+    button.id = "addDepositProductLine";
+    button.type = "button";
+    button.textContent = "Agregar otro producto";
+    actions.insertBefore(button, document.querySelector("#cancelProductEdit"));
+    button.addEventListener("click", () => addDepositProductLine());
+  }
+  line.querySelector('[name="name"]')?.addEventListener("change", () => applyExistingProductDefaultsForLine(line));
+  removeButton.addEventListener("click", () => {
+    line.remove();
+    syncDepositLineButtons();
+  });
+  syncDepositLineButtons();
+}
+
+function ensureFilterClearButton(container, id, label, onClear) {
+  const target = typeof container === "string" ? document.querySelector(container) : container;
+  if (!target || document.querySelector(`#${id}`)) return;
+  const button = document.createElement("button");
+  button.className = "link-button filter-clear-button";
+  button.id = id;
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", onClear);
+  target.appendChild(button);
+}
+
+function ensureInlineClear(input, onClear) {
+  if (!input || input.dataset.hasClearButton) return;
+  input.dataset.hasClearButton = "true";
+  const button = document.createElement("button");
+  button.className = "field-clear-button";
+  button.type = "button";
+  button.textContent = "×";
+  button.title = "Borrar filtro";
+  button.setAttribute("aria-label", "Borrar filtro");
+  button.addEventListener("click", () => {
+    input.value = "";
+    onClear?.();
+    input.focus();
+  });
+  input.insertAdjacentElement("afterend", button);
+}
+
+function clearDepositFilters() {
+  ["#productNameFilter", "#productReceiptFilter", "#productReceiptDateFrom", "#productReceiptDateTo"].forEach((selector) => {
+    const input = document.querySelector(selector);
+    if (input) input.value = "";
+  });
+  const sort = document.querySelector("#productReceiptDateSort");
+  if (sort) sort.value = "desc";
+  renderProducts();
+}
+
+function clearOrderFilters() {
+  orderFilter = "Todas";
+  document.querySelectorAll(".order-filter").forEach((item) => item.classList.toggle("active", item.dataset.orderFilter === orderFilter));
+  renderOrders();
+}
+
+function clearClosureFilters() {
+  closureCropFilter = "Todos";
+  const filter = document.querySelector("#closureCropFilter");
+  if (filter) filter.value = "Todos";
+  renderClosures();
+}
+
+function clearHistoryLotFilters() {
+  historyLotCropFilter = "Todos";
+  historyLotCampaignFilter = "Todos";
+  const crop = document.querySelector("#historyLotCropFilter");
+  const campaign = document.querySelector("#historyLotCampaignFilter");
+  if (crop) crop.value = "Todos";
+  if (campaign) campaign.value = "Todos";
+  renderHistoryLotDetail();
+}
+
+function clearCostCategoryFilter() {
+  selectedCostCategory = "";
+  const detail = document.querySelector("#costCategoryDetail");
+  if (detail) detail.innerHTML = "";
+  renderCosts();
+  switchView("costos");
+}
+
+function initializeFilterClearTools() {
+  document.querySelectorAll(".deposit-filters input").forEach((input) => ensureInlineClear(input, renderProducts));
+  ensureFilterClearButton(".deposit-filters", "clearDepositFilters", "Limpiar", clearDepositFilters);
+  ensureFilterClearButton(".order-filters", "clearOrderFilters", "Limpiar", clearOrderFilters);
+  ensureFilterClearButton(document.querySelector("#historyLotCropFilter")?.closest(".panel-actions"), "clearHistoryLotFilters", "Limpiar", clearHistoryLotFilters);
+  ensureFilterClearButton(document.querySelector("#closureCropFilter")?.closest(".panel-header"), "clearClosureFilters", "Limpiar", clearClosureFilters);
+  ensureFilterClearButton(document.querySelector("#costCategoryDetail")?.closest(".panel")?.querySelector(".panel-header"), "clearCostCategoryFilter", "Limpiar filtro", clearCostCategoryFilter);
+}
+
+function handleDepositProductSubmit(event) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const form = event.currentTarget;
+  const shared = formData(form);
+  const lines = depositProductLines().map(depositLineValues).filter((line) => line.name);
+  if (!lines.length) {
+    showToast("Agregá al menos un producto");
+    return;
+  }
+  if (!editingProductId && !String(shared.receiptNumber || "").trim()) {
+    showToast("Indicá el número de remito o factura");
+    return;
+  }
+  if (!editingProductId && !shared.receiptDate) {
+    showToast("Indicá la fecha de compra o del remito");
+    return;
+  }
+
+  const wasEditing = Boolean(editingProductId);
+  const changed = [];
+  for (const line of lines) {
+    const values = { ...line, warehouse: shared.warehouse || "" };
+    const existing = editingProductId
+      ? data.products.find((product) => product.id === editingProductId)
+      : findDepositProductMatch(values);
+    if (!editingProductId && existing && shared.receiptNumber && hasReceiptNumber(existing, shared.receiptNumber)) {
+      showToast(`El remito ${shared.receiptNumber} ya está cargado para ${line.name}`);
+      return;
+    }
+    const receiptNumbers = editingProductId
+      ? receiptText(existing)
+      : appendReceiptEntry(receiptText(existing), shared.receiptNumber, shared.receiptDate, line.quantity, line.unitCost);
+    const record = {
+      ...(existing || {}),
+      id: existing?.id || uid("prod"),
+      ...values,
+      quantity: !editingProductId && existing ? baseStock(existing) + parseDecimal(line.quantity) : parseDecimal(line.quantity),
+      unitCost: parseDecimal(line.unitCost),
+      receiptNumbers
+    };
+    delete record.calculatedStock;
+    delete record.applicationUse;
+    if (existing) {
+      const index = data.products.findIndex((product) => product.id === existing.id);
+      if (index >= 0) data.products[index] = record;
+      queueSync("products", record, "update");
+      recalculateApplicationsForProduct(record);
+    } else {
+      data.products.push(record);
+      queueSync("products", record);
+    }
+    changed.push(record);
+  }
+
+  saveData();
+  editingProductId = "";
+  resetForm(form);
+  resetDepositProductLines();
+  form.elements.receiptDate.required = true;
+  form.elements.receiptDate.value = todayValue();
+  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+  form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
+  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  renderAll();
+  showToast(changed.length > 1 ? `${changed.length} productos cargados en el remito` : wasEditing ? "Producto y costos actualizados" : "Ingreso guardado");
 }
 
 function displayLotName(lot) {
@@ -2266,11 +2531,14 @@ function editProduct(productId) {
   const form = document.querySelector("#productForm");
   if (!product || !form) return;
   editingProductId = productId;
-  form.elements.name.value = product.name || "";
-  form.elements.type.value = product.type || "Otro";
-  form.elements.unit.value = product.unit || "";
-  form.elements.quantity.value = baseStock(product);
-  form.elements.unitCost.value = product.unitCost ?? "";
+  resetDepositProductLines();
+  setDepositLineValues(depositProductLines()[0], {
+    name: product.name || "",
+    type: product.type || "Otro",
+    unit: product.unit || "",
+    quantity: baseStock(product),
+    unitCost: product.unitCost ?? ""
+  });
   form.elements.warehouse.value = product.warehouse || "";
   form.elements.receiptNumber.value = "";
   form.elements.receiptDate.required = false;
@@ -2288,11 +2556,13 @@ function cancelProductEdit() {
   if (form) {
     form.elements.receiptDate.required = true;
     form.elements.receiptDate.value = todayValue();
+    resetDepositProductLines();
   }
   document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   if (form) form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
   document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  syncDepositLineButtons();
 }
 
 function closeProductDetail() {
@@ -2475,6 +2745,9 @@ function renderProducts() {
   const receiptCatalog = [...new Set(productsForDisplay.flatMap(receiptLabels))].sort((a, b) => a.localeCompare(b, "es"));
   const receiptCatalogList = document.querySelector("#receiptCatalogList");
   if (receiptCatalogList) receiptCatalogList.innerHTML = receiptCatalog.map((number) => `<option value="${number}"></option>`).join("");
+  const warehouseCatalog = [...new Set(data.products.map((product) => product.warehouse).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const warehouseList = document.querySelector("#warehouseCatalogList");
+  if (warehouseList) warehouseList.innerHTML = warehouseCatalog.map((warehouse) => `<option value="${warehouse}"></option>`).join("");
   const filteredProducts = productsForDisplay.filter((product) => {
     if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
     if (receiptFilter && !normalizeName(receiptLabels(product).join(" ")).includes(receiptFilter)) return false;
@@ -2754,7 +3027,10 @@ function renderCostCategoryDetail() {
         <h2>${costCategoryTitle(selectedCostCategory)}</h2>
         <p>${entries.length} movimientos en ${lots} lotes</p>
       </div>
-      <button class="link-button" id="backToCostsFromCategory" type="button">Volver a costos</button>
+      <div class="row-actions">
+        <button class="link-button filter-clear-button" id="clearCostCategoryFilter" type="button">Limpiar filtro</button>
+        <button class="link-button" id="backToCostsFromCategory" type="button">Volver a costos</button>
+      </div>
     </div>
     <div class="cost-detail-summary">
       <article><span>Total</span><strong>${money(total)}</strong></article>
@@ -2780,6 +3056,7 @@ function renderCostCategoryDetail() {
       </table>
     </div>
   `;
+  detail.querySelector("#clearCostCategoryFilter")?.addEventListener("click", clearCostCategoryFilter);
   detail.querySelector("#backToCostsFromCategory")?.addEventListener("click", () => switchView("costos"));
 }
 
@@ -3512,7 +3789,8 @@ function resetForm(form) {
 function bindForms() {
   document.querySelector("#lotForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    const values = formData(event.currentTarget);
+    const form = event.currentTarget;
+    const values = formData(form);
     const record = { id: editingLotId || uid("lot"), ...values, hectares: parseDecimal(values.hectares) };
     if (editingLotId) {
       const index = data.lots.findIndex((lot) => lot.id === editingLotId);
@@ -3532,6 +3810,8 @@ function bindForms() {
     showToast("Lote guardado");
   });
 
+  initializeDepositFormLayout();
+  document.querySelector("#productForm").addEventListener("submit", handleDepositProductSubmit, true);
   document.querySelector("#productForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
@@ -4118,6 +4398,7 @@ bindRotationTools();
 bindClosureTools();
 bindSyncTools();
 bindForms();
+initializeFilterClearTools();
 bindMapUpload();
 bindMapTools();
 renderAll();
