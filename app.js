@@ -577,6 +577,10 @@ function receiptLabels(product) {
   return [...new Set(receiptEntries(product).map((entry) => entry.number).filter(Boolean))];
 }
 
+function receiptPhotoSource(product) {
+  return productGroupProducts(product).map((item) => item.receiptPhoto).find((value) => String(value || "").startsWith("data:image/")) || "";
+}
+
 function receiptQuantityTotal(product) {
   return receiptEntriesForProduct(product)
     .filter((entry) => entry.detailed)
@@ -721,6 +725,12 @@ function initializeDepositFormLayout() {
   form.elements.warehouse.setAttribute("list", "warehouseCatalogList");
   form.elements.warehouse.placeholder = "Elegí o escribí depósito";
   form.elements.receiptNumber.closest("label").firstChild.textContent = "Nro. de remito/factura ";
+  if (!form.elements.receiptPhotoFile) {
+    const photoLabel = document.createElement("label");
+    photoLabel.className = "receipt-photo-field";
+    photoLabel.innerHTML = `Foto del remito/factura <input name="receiptPhotoFile" type="file" accept="image/*" />`;
+    form.insertBefore(photoLabel, linesWrap);
+  }
   let warehouseList = document.querySelector("#warehouseCatalogList");
   if (!warehouseList) {
     warehouseList = document.createElement("datalist");
@@ -816,7 +826,6 @@ function clearCostCategoryFilter() {
 }
 
 function initializeFilterClearTools() {
-  document.querySelectorAll(".deposit-filters input").forEach((input) => ensureInlineClear(input, renderProducts));
   ensureFilterClearButton(".deposit-filters", "clearDepositFilters", "Limpiar", clearDepositFilters);
   ensureFilterClearButton(".order-filters", "clearOrderFilters", "Limpiar", clearOrderFilters);
   ensureFilterClearButton(document.querySelector("#historyLotCropFilter")?.closest(".panel-actions"), "clearHistoryLotFilters", "Limpiar", clearHistoryLotFilters);
@@ -824,7 +833,7 @@ function initializeFilterClearTools() {
   ensureFilterClearButton(document.querySelector("#costCategoryDetail")?.closest(".panel")?.querySelector(".panel-header"), "clearCostCategoryFilter", "Limpiar filtro", clearCostCategoryFilter);
 }
 
-function handleDepositProductSubmit(event) {
+async function handleDepositProductSubmit(event) {
   event.preventDefault();
   event.stopImmediatePropagation();
   const form = event.currentTarget;
@@ -843,6 +852,12 @@ function handleDepositProductSubmit(event) {
     return;
   }
 
+  const receiptPhotoFile = form.elements.receiptPhotoFile?.files?.[0];
+  const receiptPhoto = receiptPhotoFile ? await readImageAsDataUrl(receiptPhotoFile, 960, 36000) : "";
+  if (receiptPhotoFile && !receiptPhoto) {
+    showToast("No se pudo procesar la foto del remito. Probá elegirla nuevamente.");
+    return;
+  }
   const wasEditing = Boolean(editingProductId);
   const changed = [];
   for (const line of lines) {
@@ -863,7 +878,8 @@ function handleDepositProductSubmit(event) {
       ...values,
       quantity: !editingProductId && existing ? baseStock(existing) + parseDecimal(line.quantity) : parseDecimal(line.quantity),
       unitCost: parseDecimal(line.unitCost),
-      receiptNumbers
+      receiptNumbers,
+      receiptPhoto: receiptPhoto || existing?.receiptPhoto || ""
     };
     delete record.calculatedStock;
     delete record.applicationUse;
@@ -885,6 +901,7 @@ function handleDepositProductSubmit(event) {
   resetDepositProductLines();
   form.elements.receiptDate.required = true;
   form.elements.receiptDate.value = todayValue();
+  if (form.elements.receiptPhotoFile) form.elements.receiptPhotoFile.value = "";
   document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
@@ -2651,6 +2668,7 @@ function renderProductDetail() {
   }
   const stock = stockForProduct(product);
   const entries = receiptEntries(product);
+  const receiptPhoto = receiptPhotoSource(product);
   const outputs = data.applications
     .filter((application) => productMatchesApplication(product, application))
     .map((application) => ({ application, order: orderById(application.orderId) }))
@@ -2671,6 +2689,7 @@ function renderProductDetail() {
     <div class="deposit-detail-grid">
       <div>
         <h3>Ingresos al depósito</h3>
+        ${receiptPhoto ? `<div class="receipt-photo-preview"><img src="${receiptPhoto}" alt="Foto de remito o factura" loading="lazy" /><a class="link-button" href="${receiptPhoto}" target="_blank" rel="noopener">Abrir foto</a></div>` : ""}
         <div class="table-wrap">
           <table>
             <thead><tr><th>Remito</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
@@ -3142,7 +3161,7 @@ function renderRotation() {
   const currentCampaign = Array.from(new Set(data.lots.map((lot) => lot.campaign).filter(Boolean))).sort().at(-1) || "";
   const campaigns = Array.from(new Set([...data.lots.map((lot) => lot.campaign), ...data.closures.map((closure) => closure.campaign)])).filter(Boolean).sort();
   const currentIndex = currentCampaign ? campaigns.indexOf(currentCampaign) : campaigns.length - 1;
-  const visibleCampaigns = rotationShowAllCampaigns ? campaigns : campaigns.slice(Math.max(0, currentIndex - 2), currentIndex + 1);
+  const visibleCampaigns = (rotationShowAllCampaigns ? campaigns : campaigns.slice(Math.max(0, currentIndex - 2), currentIndex + 1)).reverse();
   const rows = data.lots.map((lot) => {
     const cells = visibleCampaigns.map((campaign) => {
       const closures = data.closures.filter((item) => sameLot(item, lot) && item.campaign === campaign && item.crop);
