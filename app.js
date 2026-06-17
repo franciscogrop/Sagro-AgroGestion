@@ -918,6 +918,7 @@ async function handleDepositProductSubmit(event) {
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
   document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  document.querySelector("#productFormBand")?.classList.add("hidden-panel");
   renderAll();
   showToast(changed.length > 1 ? `${changed.length} productos cargados en el remito` : wasEditing ? "Producto y costos actualizados" : "Ingreso guardado");
 }
@@ -1801,7 +1802,10 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
         const form = select.form;
         applyLotDefaultCrop(form, true);
         applyLotDefaultVariety(form, true);
-        if (button.dataset.mapAction === "ordenes") applyOrderLotDefaultHectares(true);
+        if (button.dataset.mapAction === "ordenes") {
+          document.querySelector("#orderFormBand")?.classList.remove("hidden-panel");
+          applyOrderLotDefaultHectares(true);
+        }
         if (button.dataset.mapAction === "cierre") applyClosureDefaults(form, true);
       }
     });
@@ -2436,6 +2440,7 @@ function editOrder(orderId) {
   form.dataset.defaultHectares = String(order.plannedHectares || "");
   form.querySelector('button[type="submit"]').textContent = "Actualizar orden";
   switchView("ordenes");
+  document.querySelector("#orderFormBand")?.classList.remove("hidden-panel");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
   form.elements.task.focus();
   showToast("Editando orden");
@@ -2580,6 +2585,7 @@ function editProduct(productId) {
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Stock físico total ";
   form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
   document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
+  document.querySelector("#productFormBand")?.classList.remove("hidden-panel");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -2828,6 +2834,45 @@ function formatUnitTotals(map) {
   return entries.map(([unit, value]) => `${number(value, 2)} ${unit}`.trim()).join(" · ");
 }
 
+function openProductFormForNew() {
+  const form = document.querySelector("#productForm");
+  const band = document.querySelector("#productFormBand");
+  if (!form || !band) return;
+  editingProductId = "";
+  resetForm(form);
+  resetDepositProductLines();
+  form.elements.receiptDate.required = true;
+  form.elements.receiptDate.value = todayValue();
+  if (form.elements.receiptPhotoFile) form.elements.receiptPhotoFile.value = "";
+  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+  form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
+  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.receiptNumber?.focus();
+}
+
+function openOrderFormForNew() {
+  const form = document.querySelector("#orderForm");
+  const band = document.querySelector("#orderFormBand");
+  if (!form || !band) return;
+  editingOrderId = "";
+  resetForm(form);
+  form.elements.date.value = todayValue();
+  form.elements.status.value = "Pendiente";
+  form.elements.laborCostHa.value = 0;
+  form.dataset.originalStatus = "Pendiente";
+  form.dataset.completionDate = "";
+  form.querySelector('button[type="submit"]').textContent = "Guardar orden";
+  applyOrderLotDefaultHectares(true);
+  applyLotDefaultCrop(form, true);
+  applyLotDefaultVariety(form, true);
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.lotId?.focus();
+}
+
 function renderProducts() {
   const nameFilter = normalizeName(document.querySelector("#productNameFilter")?.value);
   const receiptFilter = normalizeName(document.querySelector("#productReceiptFilter")?.value);
@@ -2890,31 +2935,7 @@ function renderProducts() {
     return dateSort === "asc" ? comparison : -comparison;
   });
 
-  const filteredOutputRows = uniqueApplicationRows()
-    .map((application) => {
-      const product = filteredProducts.find((item) => productMatchesApplication(item, application)) || applicationProduct(application);
-      const order = orderById(application.orderId);
-      return { application, product, order, date: application.date || order?.date || "" };
-    })
-    .filter((row) => row.product && filteredProducts.some((product) => productMatchesApplication(product, row.application)))
-    .filter((row) => {
-      if (dateFrom && (!row.date || row.date < dateFrom)) return false;
-      if (dateTo && (!row.date || row.date > dateTo)) return false;
-      return true;
-    });
-  const incomingByUnit = new Map();
-  const outgoingByUnit = new Map();
-  purchases.forEach((entry) => addUnitTotal(incomingByUnit, entry.product.unit, entry.quantity));
-  filteredOutputRows.forEach((row) => addUnitTotal(outgoingByUnit, row.product.unit, applicationQuantity(row.application)));
-  const totalsPanel = ensureDepositTotalsPanel();
-  if (totalsPanel) {
-    totalsPanel.innerHTML = `
-      <article><span>Ingresos filtrados</span><strong>${formatUnitTotals(incomingByUnit)}</strong></article>
-      <article><span>Egresos en ordenes</span><strong>${formatUnitTotals(outgoingByUnit)}</strong></article>
-      <article><span>Productos visibles</span><strong>${filteredProducts.length}</strong></article>
-      <article><span>Remitos visibles</span><strong>${new Set(purchases.map((entry) => entry.number).filter(Boolean)).size}</strong></article>
-    `;
-  }
+  document.querySelector("#depositFilterTotals")?.remove();
   const purchasesHeader = document.querySelector("#purchasesByDateTable")?.closest("table")?.querySelector("thead tr");
   if (purchasesHeader && !purchasesHeader.querySelector("[data-supplier-column]")) {
     const supplierHeader = document.createElement("th");
@@ -3988,6 +4009,7 @@ function bindForms() {
 
   initializeDepositFormLayout();
   document.querySelector("#productForm").addEventListener("submit", handleDepositProductSubmit, true);
+  document.querySelector("#newDepositButton")?.addEventListener("click", openProductFormForNew);
   document.querySelector("#productForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const values = formData(event.currentTarget);
@@ -4049,6 +4071,7 @@ function bindForms() {
   document.querySelector("#productForm").elements.receiptDate.value = todayValue();
 
   const orderForm = document.querySelector("#orderForm");
+  document.querySelector("#newOrderButton")?.addEventListener("click", openOrderFormForNew);
   orderForm.elements.lotId.addEventListener("change", () => {
     applyOrderLotDefaultHectares();
     applyLotDefaultCrop(orderForm);
@@ -4116,6 +4139,7 @@ function bindForms() {
     applyLotDefaultCrop(event.currentTarget, true);
     applyLotDefaultVariety(event.currentTarget, true);
     renderAll();
+    document.querySelector("#orderFormBand")?.classList.add("hidden-panel");
     showToast("Orden guardada");
   });
 

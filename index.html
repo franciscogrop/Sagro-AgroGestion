@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260617-stock-remitos-proveedor" />
+    <link rel="stylesheet" href="styles.css?v=20260617-formularios-boton" />
   </head>
   <body>
     <div class="app-shell">
@@ -161,7 +161,7 @@
         </section>
 
         <section class="view" id="mapa">
-          <section class="form-band">
+          <section class="form-band hidden-panel" id="orderFormBand">
             <h2>Mapa de lotes</h2>
             <div class="map-loader">
               <label>Archivo KML de polígonos
@@ -234,6 +234,7 @@
             <div class="panel-header">
               <h2>Órdenes registradas</h2>
               <div class="order-filters">
+                <button class="link-button" id="newOrderButton" type="button">Nueva orden</button>
                 <button class="order-filter active" data-order-filter="Todas" type="button">Todas</button>
                 <button class="order-filter" data-order-filter="Pendiente" type="button">Pendientes</button>
                 <button class="order-filter" data-order-filter="En curso" type="button">En curso</button>
@@ -260,7 +261,7 @@
         </section>
 
         <section class="view" id="monitoreo">
-          <section class="form-band">
+          <section class="form-band hidden-panel" id="productFormBand">
             <h2>Nuevo monitoreo</h2>
             <form id="monitorForm" class="form-grid">
               <label>Fecha <input name="date" type="date" required /></label>
@@ -370,6 +371,7 @@
             <div class="panel-header">
               <h2>Productos en depósito</h2>
               <div class="deposit-filters">
+                <button class="link-button" id="newDepositButton" type="button">Nuevo ingreso</button>
                 <label>Producto <input id="productNameFilter" list="productCatalogList" placeholder="Todos" /></label>
                 <label>Remito <input id="productReceiptFilter" list="receiptCatalogList" placeholder="Todos" /></label>
                 <label>Desde <input id="productReceiptDateFrom" type="date" /></label>
@@ -607,6 +609,6 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260609-auditoria-stock"></script>
-    <script src="app.js?v=20260617-stock-remitos-proveedor"></script>
+    <script src="app.js?v=20260617-formularios-boton"></script>
   </body>
 </html>
