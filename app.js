@@ -522,10 +522,10 @@ function receiptEntriesForProduct(product) {
     const value = line.trim();
     if (!value) return [];
     if (value.includes("|")) {
-      const [number, date, quantity, unitCost] = value.split("|");
-      return [{ number, date, quantity, unitCost, detailed: true }];
+      const [number, date, quantity, unitCost, supplier] = value.split("|");
+      return [{ number, date, quantity, unitCost, supplier: supplier || product?.supplier || "", detailed: true }];
     }
-    return value.split(",").map((number) => ({ number: number.trim(), detailed: false })).filter((entry) => entry.number);
+    return value.split(",").map((number) => ({ number: number.trim(), supplier: product?.supplier || "", detailed: false })).filter((entry) => entry.number);
   });
 }
 
@@ -587,9 +587,9 @@ function receiptQuantityTotal(product) {
     .reduce((sum, entry) => sum + parseDecimal(entry.quantity), 0);
 }
 
-function appendReceiptEntry(current, receiptNumber, receiptDate, quantity, unitCost) {
+function appendReceiptEntry(current, receiptNumber, receiptDate, quantity, unitCost, supplier = "") {
   const incoming = String(receiptNumber || "").trim() || "Sin remito";
-  const entry = [incoming, receiptDate || todayValue(), parseDecimal(quantity), parseDecimal(unitCost)].join("|");
+  const entry = [incoming, receiptDate || todayValue(), parseDecimal(quantity), parseDecimal(unitCost), String(supplier || "").trim()].join("|");
   return [String(current || "").trim(), entry].filter(Boolean).join("\n");
 }
 
@@ -600,7 +600,7 @@ function hasReceiptNumber(product, receiptNumber) {
 
 function serializeReceiptEntries(entries) {
   return entries.map((entry) => entry.detailed
-    ? [entry.number, entry.date, parseDecimal(entry.quantity), parseDecimal(entry.unitCost)].join("|")
+    ? [entry.number, entry.date, parseDecimal(entry.quantity), parseDecimal(entry.unitCost), entry.supplier || ""].join("|")
     : entry.number
   ).filter(Boolean).join("\n");
 }
@@ -721,6 +721,11 @@ function initializeDepositFormLayout() {
   [labelFor("warehouse"), labelFor("receiptDate"), labelFor("receiptNumber")].filter(Boolean).reverse().forEach((label) => {
     form.insertBefore(label, linesWrap);
   });
+  if (!form.elements.supplier) {
+    const supplierLabel = document.createElement("label");
+    supplierLabel.innerHTML = `Proveedor <input name="supplier" list="supplierCatalogList" placeholder="Comercio o proveedor" />`;
+    form.insertBefore(supplierLabel, linesWrap);
+  }
   form.elements.receiptNumber.required = true;
   form.elements.warehouse.setAttribute("list", "warehouseCatalogList");
   form.elements.warehouse.placeholder = "Elegí o escribí depósito";
@@ -736,6 +741,12 @@ function initializeDepositFormLayout() {
     warehouseList = document.createElement("datalist");
     warehouseList.id = "warehouseCatalogList";
     document.body.appendChild(warehouseList);
+  }
+  let supplierList = document.querySelector("#supplierCatalogList");
+  if (!supplierList) {
+    supplierList = document.createElement("datalist");
+    supplierList.id = "supplierCatalogList";
+    document.body.appendChild(supplierList);
   }
   const actions = form.querySelector(".form-actions");
   if (actions && !document.querySelector("#addDepositProductLine")) {
@@ -871,7 +882,7 @@ async function handleDepositProductSubmit(event) {
     }
     const receiptNumbers = editingProductId
       ? receiptText(existing)
-      : appendReceiptEntry(receiptText(existing), shared.receiptNumber, shared.receiptDate, line.quantity, line.unitCost);
+      : appendReceiptEntry(receiptText(existing), shared.receiptNumber, shared.receiptDate, line.quantity, line.unitCost, shared.supplier);
     const record = {
       ...(existing || {}),
       id: existing?.id || uid("prod"),
@@ -879,6 +890,7 @@ async function handleDepositProductSubmit(event) {
       quantity: !editingProductId && existing ? baseStock(existing) + parseDecimal(line.quantity) : parseDecimal(line.quantity),
       unitCost: parseDecimal(line.unitCost),
       receiptNumbers,
+      supplier: shared.supplier || existing?.supplier || "",
       receiptPhoto: receiptPhoto || existing?.receiptPhoto || ""
     };
     delete record.calculatedStock;
@@ -1041,13 +1053,17 @@ function productMatchesApplication(product, application) {
 }
 
 function baseStock(product) {
+  const detailedReceiptTotal = receiptQuantityTotal(product);
+  if (receiptEntriesForProduct(product).some((entry) => entry.detailed)) {
+    return detailedReceiptTotal;
+  }
   if (product?.quantity !== undefined && product?.quantity !== null && product?.quantity !== "") {
     return parseDecimal(product.quantity);
   }
   if (product?.calculatedStock !== undefined && product?.calculatedStock !== null && product?.calculatedStock !== "") {
     return parseDecimal(product.calculatedStock);
   }
-  return receiptQuantityTotal(product);
+  return detailedReceiptTotal;
 }
 
 function applicationQuantity(application) {
@@ -2557,6 +2573,7 @@ function editProduct(productId) {
     unitCost: product.unitCost ?? ""
   });
   form.elements.warehouse.value = product.warehouse || "";
+  if (form.elements.supplier) form.elements.supplier.value = product.supplier || "";
   form.elements.receiptNumber.value = "";
   form.elements.receiptDate.required = false;
   document.querySelector("#productFormTitle").textContent = "Editar producto";
@@ -2604,8 +2621,9 @@ function saveReceiptEdit(index) {
   if (!targetProduct || !form || !previous) return;
   const values = formData(form);
   if (!previous.detailed) {
-    targetEntries[previous.sourceIndex] = { number: values.number.trim(), detailed: false };
+    targetEntries[previous.sourceIndex] = { number: values.number.trim(), supplier: values.supplier || previous.supplier || "", detailed: false };
     targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+    targetProduct.supplier = values.supplier || targetProduct.supplier || "";
     queueSync("products", targetProduct, "update");
     saveData();
     editingReceiptIndex = -1;
@@ -2616,9 +2634,10 @@ function saveReceiptEdit(index) {
   }
   const nextQuantity = parseDecimal(values.quantity);
   const previousQuantity = parseDecimal(previous.quantity);
-  targetEntries[previous.sourceIndex] = { number: values.number.trim(), date: values.date, quantity: nextQuantity, unitCost: parseDecimal(values.unitCost), detailed: true };
+  targetEntries[previous.sourceIndex] = { number: values.number.trim(), date: values.date, quantity: nextQuantity, unitCost: parseDecimal(values.unitCost), supplier: values.supplier || previous.supplier || "", detailed: true };
   targetProduct.quantity = baseStock(targetProduct) + nextQuantity - previousQuantity;
   targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+  targetProduct.supplier = values.supplier || targetProduct.supplier || "";
   refreshProductCurrentUnitCost(targetProduct);
   delete targetProduct.calculatedStock;
   delete targetProduct.applicationUse;
@@ -2692,12 +2711,13 @@ function renderProductDetail() {
         ${receiptPhoto ? `<div class="receipt-photo-preview"><img src="${receiptPhoto}" alt="Foto de remito o factura" loading="lazy" /><a class="link-button" href="${receiptPhoto}" target="_blank" rel="noopener">Abrir foto</a></div>` : ""}
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Remito</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
+            <thead><tr><th>Remito</th><th>Proveedor</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
             <tbody>
               ${entries.map((entry, index) => editingReceiptIndex === index ? `<tr>
-                <td colspan="4">
+                <td colspan="5">
                   <form class="form-grid compact-form" id="receiptEditForm">
                     <label>Remito <input name="number" value="${entry.number}" required /></label>
+                    <label>Proveedor <input name="supplier" value="${entry.supplier || ""}" list="supplierCatalogList" /></label>
                     ${entry.detailed ? `
                       <label>Fecha <input name="date" type="date" value="${entry.date}" required /></label>
                       <label>Cantidad <input name="quantity" type="text" inputmode="decimal" value="${entry.quantity}" required /></label>
@@ -2711,6 +2731,7 @@ function renderProductDetail() {
                 </td>
               </tr>` : `<tr>
                 <td>${entry.number}</td>
+                <td>${entry.supplier || "-"}</td>
                 <td>${entry.detailed ? dateShort(entry.date) : "-"}</td>
                 <td>${entry.detailed ? `${number(entry.quantity, 2)} ${product.unit || ""}` : "Anterior sin detalle"}</td>
                 <td>${entry.detailed ? money(entry.unitCost) : "-"} <button class="link-button" data-edit-receipt="${index}" type="button">Editar</button> <button class="link-button danger" data-delete-receipt="${index}" type="button">Eliminar</button></td>
@@ -2751,6 +2772,62 @@ function renderProductDetail() {
   });
 }
 
+function ensureDepositTotalsPanel() {
+  let panel = document.querySelector("#depositFilterTotals");
+  if (panel) return panel;
+  const productsPanel = document.querySelector("#productsTable")?.closest(".panel");
+  const tableWrap = productsPanel?.querySelector(".table-wrap");
+  if (!productsPanel || !tableWrap) return null;
+  panel = document.createElement("div");
+  panel.id = "depositFilterTotals";
+  panel.className = "deposit-filter-totals";
+  productsPanel.insertBefore(panel, tableWrap);
+  return panel;
+}
+
+function ensureCompleteReceiptsTable() {
+  let table = document.querySelector("#completeReceiptsTable");
+  if (table) return table;
+  const purchasesPanel = document.querySelector("#purchasesByDateTable")?.closest(".panel");
+  if (!purchasesPanel) return null;
+  const panel = document.createElement("section");
+  panel.className = "panel";
+  panel.innerHTML = `
+    <div class="panel-header">
+      <h2>Remitos completos</h2>
+      <span class="panel-note">Agrupados por numero, fecha, proveedor y deposito</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Remito</th>
+            <th>Proveedor</th>
+            <th>Deposito</th>
+            <th>Productos</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody id="completeReceiptsTable"></tbody>
+      </table>
+    </div>
+  `;
+  purchasesPanel.insertAdjacentElement("afterend", panel);
+  return panel.querySelector("#completeReceiptsTable");
+}
+
+function addUnitTotal(map, unit, value) {
+  const key = unit || "";
+  map.set(key, (map.get(key) || 0) + parseDecimal(value));
+}
+
+function formatUnitTotals(map) {
+  const entries = Array.from(map.entries()).filter(([, value]) => Math.abs(value) >= 0.005);
+  if (!entries.length) return "-";
+  return entries.map(([unit, value]) => `${number(value, 2)} ${unit}`.trim()).join(" · ");
+}
+
 function renderProducts() {
   const nameFilter = normalizeName(document.querySelector("#productNameFilter")?.value);
   const receiptFilter = normalizeName(document.querySelector("#productReceiptFilter")?.value);
@@ -2767,6 +2844,11 @@ function renderProducts() {
   const warehouseCatalog = [...new Set(data.products.map((product) => product.warehouse).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const warehouseList = document.querySelector("#warehouseCatalogList");
   if (warehouseList) warehouseList.innerHTML = warehouseCatalog.map((warehouse) => `<option value="${warehouse}"></option>`).join("");
+  const supplierCatalog = [...new Set(data.products.flatMap((product) =>
+    receiptEntriesForProduct(product).map((entry) => entry.supplier || product.supplier).concat(product.supplier || [])
+  ).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const supplierList = document.querySelector("#supplierCatalogList");
+  if (supplierList) supplierList.innerHTML = supplierCatalog.map((supplier) => `<option value="${supplier}"></option>`).join("");
   const filteredProducts = productsForDisplay.filter((product) => {
     if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
     if (receiptFilter && !normalizeName(receiptLabels(product).join(" ")).includes(receiptFilter)) return false;
@@ -2808,6 +2890,39 @@ function renderProducts() {
     return dateSort === "asc" ? comparison : -comparison;
   });
 
+  const filteredOutputRows = uniqueApplicationRows()
+    .map((application) => {
+      const product = filteredProducts.find((item) => productMatchesApplication(item, application)) || applicationProduct(application);
+      const order = orderById(application.orderId);
+      return { application, product, order, date: application.date || order?.date || "" };
+    })
+    .filter((row) => row.product && filteredProducts.some((product) => productMatchesApplication(product, row.application)))
+    .filter((row) => {
+      if (dateFrom && (!row.date || row.date < dateFrom)) return false;
+      if (dateTo && (!row.date || row.date > dateTo)) return false;
+      return true;
+    });
+  const incomingByUnit = new Map();
+  const outgoingByUnit = new Map();
+  purchases.forEach((entry) => addUnitTotal(incomingByUnit, entry.product.unit, entry.quantity));
+  filteredOutputRows.forEach((row) => addUnitTotal(outgoingByUnit, row.product.unit, applicationQuantity(row.application)));
+  const totalsPanel = ensureDepositTotalsPanel();
+  if (totalsPanel) {
+    totalsPanel.innerHTML = `
+      <article><span>Ingresos filtrados</span><strong>${formatUnitTotals(incomingByUnit)}</strong></article>
+      <article><span>Egresos en ordenes</span><strong>${formatUnitTotals(outgoingByUnit)}</strong></article>
+      <article><span>Productos visibles</span><strong>${filteredProducts.length}</strong></article>
+      <article><span>Remitos visibles</span><strong>${new Set(purchases.map((entry) => entry.number).filter(Boolean)).size}</strong></article>
+    `;
+  }
+  const purchasesHeader = document.querySelector("#purchasesByDateTable")?.closest("table")?.querySelector("thead tr");
+  if (purchasesHeader && !purchasesHeader.querySelector("[data-supplier-column]")) {
+    const supplierHeader = document.createElement("th");
+    supplierHeader.dataset.supplierColumn = "true";
+    supplierHeader.textContent = "Proveedor";
+    purchasesHeader.insertBefore(supplierHeader, purchasesHeader.lastElementChild);
+  }
+
   document.querySelector("#purchasesByDateTable").innerHTML = purchases.map((entry) => `
     <tr class="clickable-row" data-open-product="${entry.product.id}">
       <td>${dateShort(entry.date)}</td>
@@ -2816,9 +2931,43 @@ function renderProducts() {
       <td>${number(entry.quantity, 2)} ${entry.product.unit || ""}</td>
       <td>${money(entry.unitCost)}</td>
       <td>${money(parseDecimal(entry.quantity) * parseDecimal(entry.unitCost))}</td>
+      <td>${entry.supplier || entry.product.supplier || "-"}</td>
       <td>${entry.product.warehouse || "-"}</td>
     </tr>
-  `).join("") || `<tr><td colspan="7">No hay compras para los filtros seleccionados.</td></tr>`;
+  `).join("") || `<tr><td colspan="8">No hay compras para los filtros seleccionados.</td></tr>`;
+
+  const receiptGroups = new Map();
+  purchases.forEach((entry) => {
+    const supplier = entry.supplier || entry.product.supplier || "";
+    const key = [entry.number || "Sin remito", entry.date || "", supplier, entry.product.warehouse || ""].join("|");
+    if (!receiptGroups.has(key)) {
+      receiptGroups.set(key, {
+        number: entry.number || "Sin remito",
+        date: entry.date || "",
+        supplier,
+        warehouse: entry.product.warehouse || "",
+        products: [],
+        total: 0,
+        firstProductId: entry.product.id
+      });
+    }
+    const group = receiptGroups.get(key);
+    group.products.push(`${entry.product.name}: ${number(entry.quantity, 2)} ${entry.product.unit || ""}`);
+    group.total += parseDecimal(entry.quantity) * parseDecimal(entry.unitCost);
+  });
+  const completeReceiptsTable = ensureCompleteReceiptsTable();
+  if (completeReceiptsTable) {
+    completeReceiptsTable.innerHTML = Array.from(receiptGroups.values()).map((group) => `
+      <tr class="clickable-row" data-open-product="${group.firstProductId}">
+        <td>${dateShort(group.date)}</td>
+        <td>${group.number}</td>
+        <td>${group.supplier || "-"}</td>
+        <td>${group.warehouse || "-"}</td>
+        <td>${group.products.join("<br>")}</td>
+        <td>${money(group.total)}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="6">No hay remitos completos para los filtros seleccionados.</td></tr>`;
+  }
 
   document.querySelectorAll("[data-edit-product]").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -2835,6 +2984,14 @@ function renderProducts() {
     });
   });
   document.querySelectorAll("#purchasesByDateTable tr[data-open-product]").forEach((row) => {
+    row.addEventListener("click", () => {
+      selectedProductId = row.dataset.openProduct;
+      editingReceiptIndex = -1;
+      renderProductDetail();
+      switchView("ficha-deposito");
+    });
+  });
+  document.querySelectorAll("#completeReceiptsTable tr[data-open-product]").forEach((row) => {
     row.addEventListener("click", () => {
       selectedProductId = row.dataset.openProduct;
       editingReceiptIndex = -1;

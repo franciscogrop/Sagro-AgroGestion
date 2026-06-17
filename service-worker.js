@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v78-foto-remito-rotacion";
+const CACHE_NAME = "gestion-agro-cache-v79-stock-remitos-proveedor";
 const ASSETS = [
   "./",
   "./index.html",
