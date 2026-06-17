@@ -495,6 +495,13 @@ function productLogicalKey(product) {
   ].join("|");
 }
 
+function productStockKey(product) {
+  return [
+    normalizeName(product?.name),
+    normalizeUnitKey(product?.unit)
+  ].join("|");
+}
+
 function normalizeUnitKey(unit) {
   const normalized = normalizeName(unit).replace(/\s+/g, "");
   if (["l", "lt", "lts", "litro", "litros"].includes(normalized)) return "lt";
@@ -512,9 +519,9 @@ function normalizeWarehouseKey(warehouse) {
 }
 
 function productGroupProducts(product) {
-  const key = productLogicalKey(product);
+  const key = productStockKey(product);
   if (!key) return product ? [product] : [];
-  return data.products.filter((item) => productLogicalKey(item) === key);
+  return data.products.filter((item) => productStockKey(item) === key);
 }
 
 function receiptEntriesForProduct(product) {
@@ -531,7 +538,14 @@ function receiptEntriesForProduct(product) {
 
 function receiptEntries(product) {
   return productGroupProducts(product).flatMap((item) =>
-    receiptEntriesForProduct(item).map((entry, index) => ({ ...entry, sourceProductId: item.id, sourceIndex: index }))
+    receiptEntriesForProduct(item).map((entry, index) => ({
+      ...entry,
+      sourceProductId: item.id,
+      sourceProductName: item.name,
+      sourceWarehouse: item.warehouse,
+      sourceUnit: item.unit,
+      sourceIndex: index
+    }))
   );
 }
 
@@ -577,6 +591,14 @@ function receiptLabels(product) {
   return [...new Set(receiptEntries(product).map((entry) => entry.number).filter(Boolean))];
 }
 
+function productWarehouseLabels(product) {
+  return [...new Set(productGroupProducts(product).map((item) => item.warehouse).filter(Boolean))];
+}
+
+function productDisplayUnitCost(product) {
+  return unitCostForProductDate(product, "9999-12-31", product?.unitCost);
+}
+
 function receiptPhotoSource(product) {
   return productGroupProducts(product).map((item) => item.receiptPhoto).find((value) => String(value || "").startsWith("data:image/")) || "";
 }
@@ -614,7 +636,7 @@ function matchingProductByName(name, excludedId = "") {
 function displayProducts() {
   const groups = new Map();
   data.products.forEach((product) => {
-    const key = productLogicalKey(product) || product.id;
+    const key = productStockKey(product) || product.id;
     const current = groups.get(key);
     if (!current || receiptEntriesForProduct(product).length > receiptEntriesForProduct(current).length) groups.set(key, product);
   });
@@ -2695,6 +2717,7 @@ function renderProductDetail() {
   const stock = stockForProduct(product);
   const entries = receiptEntries(product);
   const receiptPhoto = receiptPhotoSource(product);
+  const warehouses = productWarehouseLabels(product);
   const outputs = data.applications
     .filter((application) => productMatchesApplication(product, application))
     .map((application) => ({ application, order: orderById(application.orderId) }))
@@ -2703,7 +2726,7 @@ function renderProductDetail() {
     <div class="application-detail-header">
       <div>
         <strong>${product.name}</strong>
-        <span>${product.type || "-"} · ${product.warehouse || "-"}</span>
+        <span>${product.type || "-"} · ${warehouses.join(", ") || "-"}</span>
       </div>
       <div class="application-detail-kpis">
         <span>Físico ${number(stock.physical, 2)} ${product.unit || ""}</span>
@@ -2718,10 +2741,10 @@ function renderProductDetail() {
         ${receiptPhoto ? `<div class="receipt-photo-preview"><img src="${receiptPhoto}" alt="Foto de remito o factura" loading="lazy" /><a class="link-button" href="${receiptPhoto}" target="_blank" rel="noopener">Abrir foto</a></div>` : ""}
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Remito</th><th>Proveedor</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
+            <thead><tr><th>Remito</th><th>Proveedor</th><th>Depósito</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
             <tbody>
               ${entries.map((entry, index) => editingReceiptIndex === index ? `<tr>
-                <td colspan="5">
+                <td colspan="6">
                   <form class="form-grid compact-form" id="receiptEditForm">
                     <label>Remito <input name="number" value="${entry.number}" required /></label>
                     <label>Proveedor <input name="supplier" value="${entry.supplier || ""}" list="supplierCatalogList" /></label>
@@ -2739,10 +2762,11 @@ function renderProductDetail() {
               </tr>` : `<tr>
                 <td>${entry.number}</td>
                 <td>${entry.supplier || "-"}</td>
+                <td>${entry.sourceWarehouse || "-"}</td>
                 <td>${entry.detailed ? dateShort(entry.date) : "-"}</td>
                 <td>${entry.detailed ? `${number(entry.quantity, 2)} ${product.unit || ""}` : "Anterior sin detalle"}</td>
                 <td>${entry.detailed ? money(entry.unitCost) : "-"} <button class="link-button" data-edit-receipt="${index}" type="button">Editar</button> <button class="link-button danger" data-delete-receipt="${index}" type="button">Eliminar</button></td>
-              </tr>`).join("") || `<tr><td colspan="4">Todavía no hay ingresos identificados por remito.</td></tr>`}
+              </tr>`).join("") || `<tr><td colspan="6">Todavía no hay ingresos identificados por remito.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -2920,6 +2944,8 @@ function renderProducts() {
   document.querySelector("#productsTable").innerHTML = filteredProducts
     .map((product) => {
       const stock = stockForProduct(product);
+      const unitCost = productDisplayUnitCost(product);
+      const warehouses = productWarehouseLabels(product);
       return `
       <tr class="clickable-row" data-open-product="${product.id}">
         <td>${product.name} ${syncBadge(product)}</td>
@@ -2927,9 +2953,9 @@ function renderProducts() {
         <td>${number(stock.physical, 2)} ${product.unit}</td>
         <td>${number(stock.reserved, 2)} ${product.unit}</td>
         <td>${number(stock.available, 2)} ${product.unit}</td>
-        <td>${money(product.unitCost)}</td>
-        <td>${money(stock.available * product.unitCost)}</td>
-        <td>${product.warehouse || "-"} · ${statusBadge(product.status || "OK")}</td>
+        <td>${money(unitCost)}</td>
+        <td>${money(stock.available * unitCost)}</td>
+        <td>${warehouses.join(", ") || "-"} · ${statusBadge(product.status || "OK")}</td>
         <td>${receiptLabels(product).join(", ") || "-"}</td>
         <td><button class="link-button" data-edit-product="${product.id}" type="button">Editar</button></td>
       </tr>
@@ -2966,31 +2992,32 @@ function renderProducts() {
       <td>${dateShort(entry.date)}</td>
       <td>${entry.product.name}</td>
       <td>${entry.number || "-"}</td>
-      <td>${number(entry.quantity, 2)} ${entry.product.unit || ""}</td>
+      <td>${number(entry.quantity, 2)} ${entry.sourceUnit || entry.product.unit || ""}</td>
       <td>${money(entry.unitCost)}</td>
       <td>${money(parseDecimal(entry.quantity) * parseDecimal(entry.unitCost))}</td>
       <td>${entry.supplier || entry.product.supplier || "-"}</td>
-      <td>${entry.product.warehouse || "-"}</td>
+      <td>${entry.sourceWarehouse || entry.product.warehouse || "-"}</td>
     </tr>
   `).join("") || `<tr><td colspan="8">No hay compras para los filtros seleccionados.</td></tr>`;
 
   const receiptGroups = new Map();
   purchases.forEach((entry) => {
     const supplier = entry.supplier || entry.product.supplier || "";
-    const key = [entry.number || "Sin remito", entry.date || "", supplier, entry.product.warehouse || ""].join("|");
+    const warehouse = entry.sourceWarehouse || entry.product.warehouse || "";
+    const key = [entry.number || "Sin remito", entry.date || "", supplier, warehouse].join("|");
     if (!receiptGroups.has(key)) {
       receiptGroups.set(key, {
         number: entry.number || "Sin remito",
         date: entry.date || "",
         supplier,
-        warehouse: entry.product.warehouse || "",
+        warehouse,
         products: [],
         total: 0,
         firstProductId: entry.product.id
       });
     }
     const group = receiptGroups.get(key);
-    group.products.push(`${entry.product.name}: ${number(entry.quantity, 2)} ${entry.product.unit || ""}`);
+    group.products.push(`${entry.sourceProductName || entry.product.name}: ${number(entry.quantity, 2)} ${entry.sourceUnit || entry.product.unit || ""}`);
     group.total += parseDecimal(entry.quantity) * parseDecimal(entry.unitCost);
   });
   const completeReceiptsTable = ensureCompleteReceiptsTable();

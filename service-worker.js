@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v81-formularios-ocultos";
+const CACHE_NAME = "gestion-agro-cache-v82-stock-unificado";
 const ASSETS = [
   "./",
   "./index.html",
