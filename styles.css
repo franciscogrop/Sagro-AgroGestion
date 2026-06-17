@@ -402,6 +402,26 @@ h2 {
   color: #fff;
 }
 
+.primary-action,
+#newOrderButton,
+#newDepositButton,
+#newMonitorButton {
+  border-color: var(--green);
+  background: var(--green);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(47, 132, 82, 0.16);
+  padding: 9px 13px;
+}
+
+.primary-action:hover,
+#newOrderButton:hover,
+#newDepositButton:hover,
+#newMonitorButton:hover {
+  border-color: var(--green-dark);
+  background: var(--green-dark);
+  color: #fff;
+}
+
 .link-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -651,7 +671,7 @@ h2 {
 }
 
 .hidden-panel {
-  display: none;
+  display: none !important;
 }
 
 .panel-header {

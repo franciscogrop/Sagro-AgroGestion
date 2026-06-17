@@ -2490,6 +2490,7 @@ function editMonitor(monitorId) {
   form.elements.photoFile.value = "";
   form.querySelector('button[type="submit"]').textContent = "Actualizar monitoreo";
   switchView("monitoreo");
+  document.querySelector("#monitorFormBand")?.classList.remove("hidden-panel");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -2866,6 +2867,22 @@ function openOrderFormForNew() {
   form.dataset.completionDate = "";
   form.querySelector('button[type="submit"]').textContent = "Guardar orden";
   applyOrderLotDefaultHectares(true);
+  applyLotDefaultCrop(form, true);
+  applyLotDefaultVariety(form, true);
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.lotId?.focus();
+}
+
+function openMonitorFormForNew() {
+  const form = document.querySelector("#monitorForm");
+  const band = document.querySelector("#monitorFormBand");
+  if (!form || !band) return;
+  editingMonitorId = "";
+  resetForm(form);
+  form.elements.date.value = todayValue();
+  if (form.elements.photoFile) form.elements.photoFile.value = "";
+  form.querySelector('button[type="submit"]').textContent = "Guardar monitoreo";
   applyLotDefaultCrop(form, true);
   applyLotDefaultVariety(form, true);
   band.classList.remove("hidden-panel");
@@ -4144,6 +4161,7 @@ function bindForms() {
   });
 
   const monitorForm = document.querySelector("#monitorForm");
+  document.querySelector("#newMonitorButton")?.addEventListener("click", openMonitorFormForNew);
   monitorForm.elements.lotId.addEventListener("change", () => {
     applyLotDefaultCrop(monitorForm);
     applyLotDefaultVariety(monitorForm);
@@ -4205,6 +4223,7 @@ function bindForms() {
       saveData();
       resetForm(form);
       if (form.elements.photoFile) form.elements.photoFile.value = "";
+      document.querySelector("#monitorFormBand")?.classList.add("hidden-panel");
       renderAll();
       openMonitorDetail(record.id);
       showToast("Monitoreo guardado");

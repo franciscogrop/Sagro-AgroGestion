@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260617-formularios-boton" />
+    <link rel="stylesheet" href="styles.css?v=20260617-formularios-ocultos" />
   </head>
   <body>
     <div class="app-shell">
@@ -161,7 +161,7 @@
         </section>
 
         <section class="view" id="mapa">
-          <section class="form-band hidden-panel" id="orderFormBand">
+          <section class="form-band">
             <h2>Mapa de lotes</h2>
             <div class="map-loader">
               <label>Archivo KML de polígonos
@@ -204,7 +204,7 @@
             <button class="order-summary-card" data-order-filter-shortcut="Pendiente" type="button"><span>Hectáreas pendientes</span><strong id="ordersPendingHa">0</strong></button>
           </div>
 
-          <section class="form-band">
+          <section class="form-band hidden-panel" id="orderFormBand">
             <h2>Nueva orden de trabajo</h2>
             <form id="orderForm" class="form-grid">
               <label>Fecha <input name="date" type="date" required /></label>
@@ -261,7 +261,7 @@
         </section>
 
         <section class="view" id="monitoreo">
-          <section class="form-band hidden-panel" id="productFormBand">
+          <section class="form-band hidden-panel" id="monitorFormBand">
             <h2>Nuevo monitoreo</h2>
             <form id="monitorForm" class="form-grid">
               <label>Fecha <input name="date" type="date" required /></label>
@@ -280,6 +280,7 @@
           <section class="panel">
             <div class="panel-header">
               <h2>Recorridas</h2>
+              <button class="link-button primary-action" id="newMonitorButton" type="button">Nuevo monitoreo</button>
             </div>
             <div id="monitorList" class="list"></div>
           </section>
@@ -339,7 +340,7 @@
         </section>
 
         <section class="view" id="stock">
-          <section class="form-band">
+          <section class="form-band hidden-panel" id="productFormBand">
             <h2 id="productFormTitle">Nuevo ingreso al depósito</h2>
             <form id="productForm" class="form-grid">
               <label>Producto <input name="name" list="productCatalogList" required placeholder="Elegí uno cargado o escribí uno nuevo" /></label>
@@ -609,6 +610,6 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260609-auditoria-stock"></script>
-    <script src="app.js?v=20260617-formularios-boton"></script>
+    <script src="app.js?v=20260617-formularios-ocultos"></script>
   </body>
 </html>

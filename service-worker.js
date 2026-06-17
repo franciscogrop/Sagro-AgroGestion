@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v80-formularios-boton";
+const CACHE_NAME = "gestion-agro-cache-v81-formularios-ocultos";
 const ASSETS = [
   "./",
   "./index.html",
