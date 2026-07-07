@@ -1,4 +1,4 @@
-const storageKey = "gestion-agro-v3";
+﻿const storageKey = "gestion-agro-v3";
 const syncQueueKey = "gestion-agro-sync-queue-v1";
 const syncConfigKey = "gestion-agro-sync-config-v1";
 const defaultSyncApiUrl = "https://script.google.com/macros/s/AKfycbxCnXxTt91wEZF-rXzldO3zseFTuYBFKnMFzFi8DPtj3iVMGvamxS8uD0Jb2Ex1BTn_/exec";
@@ -6,27 +6,27 @@ const syncedBadgeVisibleMs = 6000;
 
 const starterData = {
   lots: [
-    { id: "lot-1", name: "Lote 1", farm: "La Esperanza", hectares: 86, campaign: "2025/26", crop: "Soja", previousCrop: "Maíz" },
-    { id: "lot-2", name: "Lote 2", farm: "La Esperanza", hectares: 122, campaign: "2025/26", crop: "Maíz", previousCrop: "Trigo/Soja 2da" },
-    { id: "lot-3", name: "Lote 3", farm: "El Ombú", hectares: 64, campaign: "2025/26", crop: "Trigo", previousCrop: "Soja" }
+    { id: "lot-1", name: "Lote 1", farm: "La Esperanza", hectares: 86, campaign: "2025/26", crop: "Soja", previousCrop: "MaÃ­z" },
+    { id: "lot-2", name: "Lote 2", farm: "La Esperanza", hectares: 122, campaign: "2025/26", crop: "MaÃ­z", previousCrop: "Trigo/Soja 2da" },
+    { id: "lot-3", name: "Lote 3", farm: "El OmbÃº", hectares: 64, campaign: "2025/26", crop: "Trigo", previousCrop: "Soja" }
   ],
   products: [
-    { id: "prod-1", name: "Glifosato", type: "Herbicida", unit: "lt", quantity: 540, unitCost: 3100, warehouse: "Depósito principal" },
-    { id: "prod-2", name: "Urea", type: "Fertilizante", unit: "kg", quantity: 4200, unitCost: 780, warehouse: "Galpón fertilizantes" },
-    { id: "prod-3", name: "Fungicida mezcla", type: "Fungicida", unit: "lt", quantity: 120, unitCost: 8200, warehouse: "Depósito principal" }
+    { id: "prod-1", name: "Glifosato", type: "Herbicida", unit: "lt", quantity: 540, unitCost: 3100, warehouse: "DepÃ³sito principal" },
+    { id: "prod-2", name: "Urea", type: "Fertilizante", unit: "kg", quantity: 4200, unitCost: 780, warehouse: "GalpÃ³n fertilizantes" },
+    { id: "prod-3", name: "Fungicida mezcla", type: "Fungicida", unit: "lt", quantity: 120, unitCost: 8200, warehouse: "DepÃ³sito principal" }
   ],
   orders: [
     { id: "ord-1", date: "2026-05-12", lotId: "lot-1", task: "Monitoreo de malezas", owner: "Juan", status: "Pendiente", notes: "" },
-    { id: "ord-2", date: "2026-05-18", lotId: "lot-2", task: "Fertilización nitrogenada", owner: "Contratista", status: "En curso", notes: "" }
+    { id: "ord-2", date: "2026-05-18", lotId: "lot-2", task: "FertilizaciÃ³n nitrogenada", owner: "Contratista", status: "En curso", notes: "" }
   ],
   monitors: [
-    { id: "mon-1", date: "2026-05-01", lotId: "lot-1", cropStatus: "Bueno", weeds: "Baja presión", issues: "Sin plagas", recommendation: "Revisar en 7 días" }
+    { id: "mon-1", date: "2026-05-01", lotId: "lot-1", cropStatus: "Bueno", weeds: "Baja presiÃ³n", issues: "Sin plagas", recommendation: "Revisar en 7 dÃ­as" }
   ],
   applications: [
     { id: "app-1", date: "2026-04-20", lotId: "lot-1", productId: "prod-1", dose: 2.2, hectares: 86, laborCostHa: 4200, productCost: 586520, totalCost: 947720 }
   ],
   closures: [
-    { id: "clo-1", lotId: "lot-1", campaign: "2024/25", crop: "Maíz", hectares: 86, kgHarvested: 774000, priceTon: 185000, otherCosts: 8600000, applicationCosts: 0, income: 143190000, grossMargin: 134590000 },
+    { id: "clo-1", lotId: "lot-1", campaign: "2024/25", crop: "MaÃ­z", hectares: 86, kgHarvested: 774000, priceTon: 185000, otherCosts: 8600000, applicationCosts: 0, income: 143190000, grossMargin: 134590000 },
     { id: "clo-2", lotId: "lot-3", campaign: "2024/25", crop: "Soja", hectares: 64, kgHarvested: 192000, priceTon: 295000, otherCosts: 5200000, applicationCosts: 0, income: 56640000, grossMargin: 51440000 }
   ],
   mapPolygons: [
@@ -72,7 +72,7 @@ let closureCropFilter = "Todos";
 let historyLotCropFilter = "Todos";
 let historyLotCampaignFilter = "Todos";
 const otherHistoryCrops = ["Lino", "Arveja", "Carinata", "Sorgo"];
-const forageHistoryCrops = ["Alfalfa", "Avena", "Moha", "Verdeo", "Raigras", "Raigrás", "Agropiro", "Cebadilla", "Campo natural"];
+const forageHistoryCrops = ["Alfalfa", "Avena", "Moha", "Verdeo", "Raigras", "RaigrÃ¡s", "Agropiro", "Cebadilla", "Campo natural"];
 let mapZoom = 2.2;
 let mapPanX = 0;
 let mapPanY = 0;
@@ -83,18 +83,18 @@ const titles = {
   mapa: "Mapa de lotes",
   ordenes: "Orden de trabajo",
   monitoreo: "Monitoreo",
-  aplicaciones: "Detalle de aplicación",
-  stock: "Depósito",
+  aplicaciones: "Detalle de aplicaciÃ³n",
+  stock: "DepÃ³sito",
   "ficha-deposito": "Ficha del insumo",
   costos: "Costos por lote",
   "ficha-costos-lote": "Costos del lote",
   "ficha-costos-rubro": "Detalle de costos",
-  rotacion: "Rotación de cultivos",
-  historico: "Panel histórico",
-  "ficha-historico-cultivo": "Histórico por cultivo",
-  "ficha-historico-lote": "Histórico por lote",
-  cierre: "Cierre de campaña",
-  "ficha-campana": "Ficha de campaña",
+  rotacion: "RotaciÃ³n de cultivos",
+  historico: "Panel histÃ³rico",
+  "ficha-historico-cultivo": "HistÃ³rico por cultivo",
+  "ficha-historico-lote": "HistÃ³rico por lote",
+  cierre: "Cierre de campaÃ±a",
+  "ficha-campana": "Ficha de campaÃ±a",
   "ficha-lote": "Ficha del lote",
   "ficha-monitoreo": "Ficha de monitoreo",
   "ficha-orden": "Ficha de orden"
@@ -150,7 +150,7 @@ function safeStorageSet(key, value) {
   try {
     window.localStorage?.setItem(key, value);
   } catch {
-    showToast("No se pudo guardar en este dispositivo. No cierres la app: sincronizá antes de continuar.");
+    showToast("No se pudo guardar en este dispositivo. No cierres la app: sincronizÃ¡ antes de continuar.");
   }
 }
 
@@ -202,12 +202,12 @@ function renderSyncStatus() {
   if (input && document.activeElement !== input) input.value = syncConfig.apiUrl || "";
   if (status) {
     const pendingDetail = syncQueue.slice(0, 5).map((item) => {
-      const label = item.record?.date ? `${dateShort(item.record.date)} · ` : "";
-      return `<span class="sync-line">${label}${syncTableLabel(item.table)} · ${item.record?.task || item.record?.cropStatus || item.record?.name || item.record?.id || "registro"}</span>`;
+      const label = item.record?.date ? `${dateShort(item.record.date)} Â· ` : "";
+      return `<span class="sync-line">${label}${syncTableLabel(item.table)} Â· ${item.record?.task || item.record?.cropStatus || item.record?.name || item.record?.id || "registro"}</span>`;
     }).join("");
     status.innerHTML = `
       <strong>${syncRunning ? "Sincronizando..." : syncMessage()}</strong>
-      <span>Los datos quedan guardados en este navegador aunque no haya señal.</span>
+      <span>Los datos quedan guardados en este navegador aunque no haya seÃ±al.</span>
       ${pendingDetail ? `<div class="sync-pending-list">${pendingDetail}</div>` : ""}
     `;
   }
@@ -221,10 +221,10 @@ function renderSyncStatus() {
 function syncTableLabel(table) {
   const labels = {
     lots: "Lote",
-    products: "Depósito",
+    products: "DepÃ³sito",
     orders: "Orden",
     monitors: "Monitoreo",
-    applications: "Aplicación",
+    applications: "AplicaciÃ³n",
     closures: "Cierre"
   };
   return labels[table] || table;
@@ -257,7 +257,7 @@ function syncBadge(record) {
     if (syncedAt && Date.now() - syncedAt > syncedBadgeVisibleMs) return "";
     return `<span class="sync-badge synced">Sincronizado</span>`;
   }
-  if (record._syncStatus === "delete-pending") return `<span class="sync-badge pending">Eliminación pendiente</span>`;
+  if (record._syncStatus === "delete-pending") return `<span class="sync-badge pending">EliminaciÃ³n pendiente</span>`;
   return `<span class="sync-badge pending">Pendiente de sincronizar</span>`;
 }
 
@@ -640,7 +640,17 @@ function displayProducts() {
     const current = groups.get(key);
     if (!current || receiptEntriesForProduct(product).length > receiptEntriesForProduct(current).length) groups.set(key, product);
   });
-  return Array.from(groups.values());
+  return Array.from(groups.values()).sort(compareProductsByName);
+}
+
+function compareText(a, b) {
+  return String(a || "").localeCompare(String(b || ""), "es", { numeric: true, sensitivity: "base" });
+}
+
+function compareProductsByName(a, b) {
+  const byName = compareText(a?.name, b?.name);
+  if (byName) return byName;
+  return compareText(a?.unit, b?.unit);
 }
 
 function applyExistingProductDefaults() {
@@ -750,7 +760,7 @@ function initializeDepositFormLayout() {
   }
   form.elements.receiptNumber.required = true;
   form.elements.warehouse.setAttribute("list", "warehouseCatalogList");
-  form.elements.warehouse.placeholder = "Elegí o escribí depósito";
+  form.elements.warehouse.placeholder = "ElegÃ­ o escribÃ­ depÃ³sito";
   form.elements.receiptNumber.closest("label").firstChild.textContent = "Nro. de remito/factura ";
   if (!form.elements.receiptPhotoFile) {
     const photoLabel = document.createElement("label");
@@ -773,7 +783,7 @@ function initializeDepositFormLayout() {
   const actions = form.querySelector(".form-actions");
   if (actions && !document.querySelector("#addDepositProductLine")) {
     const button = document.createElement("button");
-    button.className = "link-button";
+    button.className = "link-button add-product-action";
     button.id = "addDepositProductLine";
     button.type = "button";
     button.textContent = "Agregar otro producto";
@@ -806,7 +816,7 @@ function ensureInlineClear(input, onClear) {
   const button = document.createElement("button");
   button.className = "field-clear-button";
   button.type = "button";
-  button.textContent = "×";
+  button.textContent = "Ã—";
   button.title = "Borrar filtro";
   button.setAttribute("aria-label", "Borrar filtro");
   button.addEventListener("click", () => {
@@ -873,22 +883,22 @@ async function handleDepositProductSubmit(event) {
   const shared = formData(form);
   const lines = depositProductLines().map(depositLineValues).filter((line) => line.name);
   if (!lines.length) {
-    showToast("Agregá al menos un producto");
+    showToast("AgregÃ¡ al menos un producto");
     return;
   }
   if (!editingProductId && !String(shared.receiptNumber || "").trim()) {
-    showToast("Indicá el número de remito o factura");
+    showToast("IndicÃ¡ el nÃºmero de remito o factura");
     return;
   }
   if (!editingProductId && !shared.receiptDate) {
-    showToast("Indicá la fecha de compra o del remito");
+    showToast("IndicÃ¡ la fecha de compra o del remito");
     return;
   }
 
   const receiptPhotoFile = form.elements.receiptPhotoFile?.files?.[0];
   const receiptPhoto = receiptPhotoFile ? await readImageAsDataUrl(receiptPhotoFile, 960, 36000) : "";
   if (receiptPhotoFile && !receiptPhoto) {
-    showToast("No se pudo procesar la foto del remito. Probá elegirla nuevamente.");
+    showToast("No se pudo procesar la foto del remito. ProbÃ¡ elegirla nuevamente.");
     return;
   }
   const wasEditing = Boolean(editingProductId);
@@ -899,7 +909,7 @@ async function handleDepositProductSubmit(event) {
       ? data.products.find((product) => product.id === editingProductId)
       : findDepositProductMatch(values);
     if (!editingProductId && existing && shared.receiptNumber && hasReceiptNumber(existing, shared.receiptNumber)) {
-      showToast(`El remito ${shared.receiptNumber} ya está cargado para ${line.name}`);
+      showToast(`El remito ${shared.receiptNumber} ya estÃ¡ cargado para ${line.name}`);
       return;
     }
     const receiptNumbers = editingProductId
@@ -936,10 +946,10 @@ async function handleDepositProductSubmit(event) {
   form.elements.receiptDate.required = true;
   form.elements.receiptDate.value = todayValue();
   if (form.elements.receiptPhotoFile) form.elements.receiptPhotoFile.value = "";
-  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depÃ³sito";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
-  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
   document.querySelector("#productFormBand")?.classList.add("hidden-panel");
   renderAll();
   showToast(changed.length > 1 ? `${changed.length} productos cargados en el remito` : wasEditing ? "Producto y costos actualizados" : "Ingreso guardado");
@@ -1029,7 +1039,7 @@ function activeCampaignValue() {
 function applyActiveCampaignDefaults() {
   const campaign = activeCampaignValue();
   const label = document.querySelector("#activeCampaignLabel");
-  if (label) label.textContent = campaign || "Sin campaña";
+  if (label) label.textContent = campaign || "Sin campaÃ±a";
   ["#lotForm", "#closureForm"].forEach((selector) => {
     const input = document.querySelector(`${selector} [name="campaign"]`);
     if (input && !input.value) input.value = campaign;
@@ -1250,7 +1260,7 @@ function fillSelects() {
 
   document.querySelectorAll('select[name="productId"]').forEach((select) => {
     const selected = select.value;
-    select.innerHTML = data.products.map((product) => `<option value="${product.id}">${product.name} (${product.unit})</option>`).join("");
+    select.innerHTML = [...data.products].sort(compareProductsByName).map((product) => `<option value="${product.id}">${product.name} (${product.unit})</option>`).join("");
     if (selected) select.value = selected;
   });
 
@@ -1319,10 +1329,10 @@ function uniqueSorted(values) {
 
 function taskOptions() {
   const defaults = [
-    "Pulverización",
+    "PulverizaciÃ³n",
     "Siembra",
     "Resiembra",
-    "Fertilización",
+    "FertilizaciÃ³n",
     "Disco",
     "Rastra",
     "Monitoreo",
@@ -1357,12 +1367,12 @@ function renderOperationalAlerts() {
 
   const cards = [
     {
-      title: "Órdenes pendientes",
+      title: "Ã“rdenes pendientes",
       value: pendingOrders.length,
       detail: pendingOrders.map((item) => `
         <div class="alert-line clickable-alert" data-dashboard-order="${item.id}">
-          <b>${dateShort(item.date)} · ${lotName(item.lotId)}</b>
-          <span>${item.task} · ${number(item.plannedHectares || 0, 2)} ha · ${item.owner || "-"}</span>
+          <b>${dateShort(item.date)} Â· ${lotName(item.lotId)}</b>
+          <span>${item.task} Â· ${number(item.plannedHectares || 0, 2)} ha Â· ${item.owner || "-"}</span>
         </div>
       `).join("")
     },
@@ -1372,17 +1382,17 @@ function renderOperationalAlerts() {
       detail: negativeStock.map((item) => `
         <div class="alert-line">
           <b>${item.name}</b>
-          <span>Disponible ${number(stockForProduct(item).available, 2)} ${item.unit} · reservado ${number(stockForProduct(item).reserved, 2)} ${item.unit} · ${item.warehouse || "-"}</span>
+          <span>Disponible ${number(stockForProduct(item).available, 2)} ${item.unit} Â· reservado ${number(stockForProduct(item).reserved, 2)} ${item.unit} Â· ${item.warehouse || "-"}</span>
         </div>
       `).join("")
     },
     {
-      title: "Sin monitoreo 15 días",
+      title: "Sin monitoreo 15 dÃ­as",
       value: staleLots.length,
       detail: staleLots.map((item) => `
         <div class="alert-line">
-          <b>${displayLotName(item.lot)} · ${item.lot.farm}</b>
-          <span>Último monitoreo: ${item.lastDate ? dateShort(item.lastDate) : "sin registro"} · ${number(item.lot.hectares, 2)} ha</span>
+          <b>${displayLotName(item.lot)} Â· ${item.lot.farm}</b>
+          <span>Ãšltimo monitoreo: ${item.lastDate ? dateShort(item.lastDate) : "sin registro"} Â· ${number(item.lot.hectares, 2)} ha</span>
         </div>
       `).join("")
     }
@@ -1424,10 +1434,10 @@ function renderPaymentAlerts() {
   const overdue = purchases.filter((purchase) => purchase.paymentStatus === "Vencida");
 
   const cards = [
-    { title: "Ingresos sin factura", value: withoutInvoice.length, detail: withoutInvoice.slice(0, 3).map((item) => `${dateShort(item.date)} · ${item.store || "-"} · ${item.productName || item.productId}`).join("<br>") },
-    { title: "Sin precio", value: withoutPrice.length, detail: withoutPrice.slice(0, 3).map((item) => `${item.productName || item.productId} · ${number(item.quantity, 2)} ${item.unit}`).join("<br>") },
-    { title: "Por vencer", value: money(dueSoon.reduce((sum, item) => sum + item.totalAmount, 0)), detail: dueSoon.slice(0, 3).map((item) => `${dateShort(item.dueDate)} · ${item.store || "-"} · ${item.invoiceNumber || "-"}`).join("<br>") },
-    { title: "Vencido", value: money(overdue.reduce((sum, item) => sum + item.totalAmount, 0)), detail: overdue.slice(0, 3).map((item) => `${dateShort(item.dueDate)} · ${item.store || "-"} · ${item.invoiceNumber || "-"}`).join("<br>") }
+    { title: "Ingresos sin factura", value: withoutInvoice.length, detail: withoutInvoice.slice(0, 3).map((item) => `${dateShort(item.date)} Â· ${item.store || "-"} Â· ${item.productName || item.productId}`).join("<br>") },
+    { title: "Sin precio", value: withoutPrice.length, detail: withoutPrice.slice(0, 3).map((item) => `${item.productName || item.productId} Â· ${number(item.quantity, 2)} ${item.unit}`).join("<br>") },
+    { title: "Por vencer", value: money(dueSoon.reduce((sum, item) => sum + item.totalAmount, 0)), detail: dueSoon.slice(0, 3).map((item) => `${dateShort(item.dueDate)} Â· ${item.store || "-"} Â· ${item.invoiceNumber || "-"}`).join("<br>") },
+    { title: "Vencido", value: money(overdue.reduce((sum, item) => sum + item.totalAmount, 0)), detail: overdue.slice(0, 3).map((item) => `${dateShort(item.dueDate)} Â· ${item.store || "-"} Â· ${item.invoiceNumber || "-"}`).join("<br>") }
   ];
 
   document.querySelector("#dashboardPaymentAlerts").innerHTML = cards.map((card) => `
@@ -1519,11 +1529,11 @@ function renderMap(selectedPolygonId = data.mapPolygons?.[0]?.id) {
   const svg = document.querySelector("#lotMap");
   const detail = document.querySelector("#mapLotDetail");
   const polygons = data.mapPolygons || [];
-  document.querySelector("#mapCount").textContent = `${polygons.length} polígonos`;
+  document.querySelector("#mapCount").textContent = `${polygons.length} polÃ­gonos`;
 
   if (!polygons.length) {
-    svg.innerHTML = `<text x="450" y="280" text-anchor="middle">No hay polígonos cargados.</text>`;
-    detail.innerHTML = `<div class="empty">Seleccioná un polígono del mapa para ver su información.</div>`;
+    svg.innerHTML = `<text x="450" y="280" text-anchor="middle">No hay polÃ­gonos cargados.</text>`;
+    detail.innerHTML = `<div class="empty">SeleccionÃ¡ un polÃ­gono del mapa para ver su informaciÃ³n.</div>`;
     return;
   }
 
@@ -1573,7 +1583,7 @@ function renderMap(selectedPolygonId = data.mapPolygons?.[0]?.id) {
     return `
       <g class="map-lot" data-polygon-id="${polygon.id}" tabindex="0">
         <polygon class="${classes}" points="${pointsAttr}"></polygon>
-        <text x="${center[0].toFixed(1)}" y="${center[1].toFixed(1)}">${linkedLot?.name || polygon.name || `Polígono ${index + 1}`}</text>
+        <text x="${center[0].toFixed(1)}" y="${center[1].toFixed(1)}">${linkedLot?.name || polygon.name || `PolÃ­gono ${index + 1}`}</text>
       </g>
     `;
   }).join("")}</g>`;
@@ -1747,11 +1757,11 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
   if (!lot) {
     target.innerHTML = polygon ? `
       <div class="map-detail-body">
-        <strong>${polygon.name || "Polígono sin nombre"}</strong>
-        <span>No está vinculado a un lote cargado.</span>
-        <span>Para vincularlo, el nombre del polígono en el KML debe coincidir con el nombre del lote.</span>
+        <strong>${polygon.name || "PolÃ­gono sin nombre"}</strong>
+        <span>No estÃ¡ vinculado a un lote cargado.</span>
+        <span>Para vincularlo, el nombre del polÃ­gono en el KML debe coincidir con el nombre del lote.</span>
       </div>
-    ` : `<div class="empty">Seleccioná un lote para ver su ficha.</div>`;
+    ` : `<div class="empty">SeleccionÃ¡ un lote para ver su ficha.</div>`;
     return;
   }
 
@@ -1760,8 +1770,10 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
   const orders = lot ? data.orders.filter((order) => sameLot(order, lot)).sort((a, b) => String(b.date).localeCompare(String(a.date))) : [];
   const pendingOrders = orders.filter((order) => order.status !== "Finalizada" && order.status !== "Cancelada").length;
   const orderCosts = buildOrderCosts(lot.id);
-  const totalSpent = Array.from(orderCosts.values()).reduce((sum, item) => sum + item.total, 0);
+  const lotCost = costForLot(lot);
+  const totalSpent = lotCost.total;
   const totalSpentHa = lot.hectares ? totalSpent / lot.hectares : 0;
+  const costParts = lotCostParts(lotCost);
   const outlinePolygon = polygon || polygonForLot(lot);
   const lotOutline = renderLotOutline(outlinePolygon);
 
@@ -1769,46 +1781,68 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
     <div class="map-detail-body">
       <div>
         <strong>${displayLotName(lot)}</strong>
-        <span>${lot.farm} · ${number(lot.hectares, 2)} ha</span>
+        <span>${lot.farm} Â· ${number(lot.hectares, 2)} ha</span>
       </div>
       <div class="map-kpis">
         <div><b>${lot.crop || "-"}</b><span>Cultivo</span></div>
-        <div><b>${lot.variety || "-"}</b><span>Variedad/Híbrido</span></div>
-        <div><b>${orders.length}</b><span>Órdenes</span></div>
+        <div><b>${lot.variety || "-"}</b><span>Variedad/HÃ­brido</span></div>
+        <div><b>${orders.length}</b><span>Ã“rdenes</span></div>
         <div><b>${pendingOrders}</b><span>Pendientes</span></div>
         <div><b>${money(totalSpentHa)}</b><span>Costo acum./ha</span></div>
       </div>
       <div class="lot-info-with-outline">
         <div class="map-info-lines">
-          <span>Campaña ${lot.campaign || "-"}</span>
+          <span>CampaÃ±a ${lot.campaign || "-"}</span>
           <span>Antecesor: ${lot.previousCrop || "-"}</span>
           <span>Ambiente: ${lot.environment || "-"}</span>
-          <span>${lastClosure ? `Último cierre: ${lastClosure.campaign}, ${numberOptional(closureYield(lastClosure))} kg/ha, ${lastClosure.variety || "sin variedad"}, ${lastClosure.enso || "sin ENSO"}, margen ${moneyOptional(lastClosure.grossMargin)}` : "Sin cierre histórico cargado"}</span>
+          <span>${lastClosure ? `Ãšltimo cierre: ${lastClosure.campaign}, ${numberOptional(closureYield(lastClosure))} kg/ha, ${lastClosure.variety || "sin variedad"}, ${lastClosure.enso || "sin ENSO"}, margen ${moneyOptional(lastClosure.grossMargin)}` : "Sin cierre histÃ³rico cargado"}</span>
         </div>
         ${lotOutline}
       </div>
       <div class="map-subsection">
-        <h3>Órdenes del lote</h3>
+        <h3>Ã“rdenes del lote</h3>
         ${orders.length ? orders.map((order) => `
           <div class="map-row clickable-card" data-open-order-detail="${order.id}">
             <div>
               <b>${order.task}</b>
-              <span>${dateShort(order.date)} · ${number(order.plannedHectares || 0, 2)} ha · ${order.owner || "-"}</span>
+              <span>${dateShort(order.date)} Â· ${number(order.plannedHectares || 0, 2)} ha Â· ${order.owner || "-"}</span>
               <em>${formatOrderCost(order, orderCosts.get(order.id))}</em>
             </div>
             ${statusBadge(order.status)}
           </div>
-        `).join("") : `<p class="map-empty">Sin órdenes cargadas.</p>`}
+        `).join("") : `<p class="map-empty">Sin Ã³rdenes cargadas.</p>`}
       </div>
-      <div class="lot-total-box">
-        <span>Costo acumulado</span>
-        <strong>${money(totalSpent)}</strong>
-        <b>${money(totalSpentHa)}/ha</b>
+      <div class="lot-total-box lot-cost-breakdown-box">
+        <div class="lot-cost-totals">
+          <article>
+            <span>Costo total del lote</span>
+            <strong>${money(totalSpent)}</strong>
+          </article>
+          <article>
+            <span>Costo por hectÃƒÂ¡rea</span>
+            <strong>${money(totalSpentHa)}/ha</strong>
+          </article>
+        </div>
+        ${costParts.length ? `
+          <div class="lot-cost-bar">
+            ${costParts.map((part) => `<span title="${part.label}" style="width:${((part.amount / totalSpent) * 100).toFixed(2)}%; background:${part.color}"></span>`).join("")}
+          </div>
+          <div class="lot-cost-grid">
+            ${costParts.map((part) => `
+              <div>
+                <i style="background:${part.color}"></i>
+                <span>${part.label}</span>
+                <strong>${money(part.amount)}</strong>
+                <em>${money(lot.hectares ? part.amount / lot.hectares : 0)}/ha Ã‚Â· ${number((part.amount / totalSpent) * 100, 1)}%</em>
+              </div>
+            `).join("")}
+          </div>
+        ` : `<p class="map-empty">TodavÃƒÂ­a no hay costos imputados a este lote.</p>`}
       </div>
       <div class="map-actions">
         <button data-map-action="ordenes" data-lot-id="${lot.id}">Nueva orden</button>
         <button data-map-action="monitoreo" data-lot-id="${lot.id}">Monitoreo</button>
-        <button data-map-action="aplicaciones" data-lot-id="${lot.id}">Aplicación</button>
+        <button data-map-action="aplicaciones" data-lot-id="${lot.id}">AplicaciÃ³n</button>
         <button data-map-action="cierre" data-lot-id="${lot.id}">Cierre</button>
       </div>
     </div>
@@ -1877,7 +1911,7 @@ function buildOrderCosts(lotId) {
 function formatOrderCost(order, cost) {
   if (!cost || !cost.total) return "Costo: sin costo cargado";
   const hectares = cost.hectares || order.plannedHectares || 0;
-  return `Costo: ${money(cost.total)} · ${money(hectares ? cost.total / hectares : 0)}/ha`;
+  return `Costo: ${money(cost.total)} Â· ${money(hectares ? cost.total / hectares : 0)}/ha`;
 }
 
 function applicationsForOrder(orderId) {
@@ -1910,7 +1944,7 @@ function parseKml(text) {
   if (xml.querySelector("parsererror")) throw new Error("No se pudo leer el KML.");
 
   return Array.from(xml.querySelectorAll("Placemark")).flatMap((placemark, index) => {
-    const name = placemark.querySelector("name")?.textContent?.trim() || `Polígono ${index + 1}`;
+    const name = placemark.querySelector("name")?.textContent?.trim() || `PolÃ­gono ${index + 1}`;
     const rings = Array.from(placemark.querySelectorAll("Polygon")).map((polygon) => {
       return polygon.querySelector("outerBoundaryIs LinearRing coordinates") || polygon.querySelector("coordinates");
     });
@@ -1959,13 +1993,13 @@ function renderOrders() {
       <tr class="clickable-row" data-open-order-detail="${order.id}">
         <td>${dateShort(order.date)}</td>
         <td><strong class="lot-cell">${lotName(order.lotId)}</strong></td>
-        <td>${order.task} <span class="muted-inline">${order.crop || lotCrop(order.lotId) || "-"} · ${order.variety || lotVariety(order.lotId) || "-"}</span> ${syncBadge(order)}</td>
+        <td>${order.task} <span class="muted-inline">${order.crop || lotCrop(order.lotId) || "-"} Â· ${order.variety || lotVariety(order.lotId) || "-"}</span> ${syncBadge(order)}</td>
         <td>${number(order.plannedHectares || order.Hectareas_planificadas || 0, 2)}</td>
         <td>${order.owner || "-"}</td>
         <td>${statusBadge(order.status)}</td>
         <td>
           <div class="row-actions">
-            ${applicationOrderIds.has(order.id) ? `<button class="link-button" data-open-application="${applicationByOrderId.get(order.id)}">Ver aplicación</button>` : orderNeedsApplication(order) ? `<button class="link-button primary" data-add-application="${order.id}">Agregar aplicación</button>` : ""}
+            ${applicationOrderIds.has(order.id) ? `<button class="link-button" data-open-application="${applicationByOrderId.get(order.id)}">Ver aplicaciÃ³n</button>` : orderNeedsApplication(order) ? `<button class="link-button primary" data-add-application="${order.id}">Agregar aplicaciÃ³n</button>` : ""}
             ${order.status !== "Finalizada" ? `<button class="link-button" data-finish-order="${order.id}">Finalizar</button>` : ""}
             <button class="link-button" data-edit-order="${order.id}">Editar</button>
             <button class="link-button danger" data-delete-order="${order.id}">Eliminar</button>
@@ -1973,7 +2007,7 @@ function renderOrders() {
         </td>
       </tr>
     `)
-    .join("") || `<tr><td colspan="7">No hay órdenes para este filtro.</td></tr>`;
+    .join("") || `<tr><td colspan="7">No hay Ã³rdenes para este filtro.</td></tr>`;
 
   document.querySelectorAll("[data-open-application]").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -2021,7 +2055,7 @@ function openOrderDetail(orderId, backView = "ordenes") {
   const order = orderById(orderId);
   orderDetailBackLotId = backView === "ficha-lote" ? order?.lotId || orderDetailBackLotId : "";
   const backButton = document.querySelector("#backFromOrderDetail");
-  if (backButton) backButton.textContent = backView === "ficha-lote" ? "Volver al lote" : "Volver a órdenes";
+  if (backButton) backButton.textContent = backView === "ficha-lote" ? "Volver al lote" : "Volver a Ã³rdenes";
   renderOrderDetail(orderId);
   switchView("ficha-orden");
 }
@@ -2032,7 +2066,7 @@ function renderOrderDetail(orderId) {
 
   const order = orderById(orderId);
   if (!order) {
-    detail.innerHTML = `<div class="empty">No encontré esa orden.</div>`;
+    detail.innerHTML = `<div class="empty">No encontrÃ© esa orden.</div>`;
     return;
   }
 
@@ -2047,7 +2081,7 @@ function renderOrderDetail(orderId) {
     <div class="map-detail-body">
       <div>
         <strong>${order.task}</strong>
-        <span>${dateShort(order.date)} · ${lotName(order.lotId)} · ${number(hectares, 2)} ha</span>
+        <span>${dateShort(order.date)} Â· ${lotName(order.lotId)} Â· ${number(hectares, 2)} ha</span>
       </div>
       <div class="map-kpis">
         <div><b>${statusBadge(order.status)}</b><span>Estado</span></div>
@@ -2058,7 +2092,7 @@ function renderOrderDetail(orderId) {
       <div class="map-info-lines">
         <span>ID orden: ${order.id}</span>
         <span>Cultivo: ${order.crop || lotCrop(order.lotId) || "-"}</span>
-        <span>Variedad/Híbrido: ${order.variety || lotVariety(order.lotId) || "-"}</span>
+        <span>Variedad/HÃ­brido: ${order.variety || lotVariety(order.lotId) || "-"}</span>
         <span>Costo labor/ha: ${money(order.laborCostHa || 0)}</span>
         <span>Observaciones: ${order.notes || "-"}</span>
       </div>
@@ -2068,19 +2102,19 @@ function renderOrderDetail(orderId) {
         <button class="link-button danger" data-delete-order="${order.id}">Eliminar orden</button>
       </div>
       <div class="map-subsection">
-        <h3>Aplicación vinculada</h3>
+        <h3>AplicaciÃ³n vinculada</h3>
         ${rows.length ? `
           <div class="map-row clickable-card" data-open-application="${applicationId}">
             <div>
               <b>${applicationId}</b>
-              <span>Productos ${money(productCost)} · Labor ${money(laborCost)} · Total ${money(total)}</span>
+              <span>Productos ${money(productCost)} Â· Labor ${money(laborCost)} Â· Total ${money(total)}</span>
               <em>${rows.map((row) => row.productName || productName(row.productId)).join(", ")}</em>
             </div>
-            <button class="link-button">Ver aplicación</button>
+            <button class="link-button">Ver aplicaciÃ³n</button>
           </div>
         ` : orderNeedsApplication(order) ? `
-          <button class="link-button primary" data-add-application="${order.id}">Agregar aplicación</button>
-        ` : `<p class="map-empty">Esta orden no tiene aplicación vinculada.</p>`}
+          <button class="link-button primary" data-add-application="${order.id}">Agregar aplicaciÃ³n</button>
+        ` : `<p class="map-empty">Esta orden no tiene aplicaciÃ³n vinculada.</p>`}
       </div>
     </div>
   `;
@@ -2107,8 +2141,8 @@ function renderMonitors() {
         <div class="monitor-list-row">
           ${monitorPhotoSource(monitor.photo) ? `<img class="monitor-thumb" src="${monitorPhotoSource(monitor.photo)}" alt="Foto de monitoreo" loading="lazy" />` : ""}
           <div>
-            <strong>${dateShort(monitor.date)} · ${lotName(monitor.lotId)} · ${monitor.crop || lotCrop(monitor.lotId) || "-"} · ${lotVariety(monitor.lotId) || monitor.variety || "-"} · ${monitor.cropStatus || "Sin estado"} ${syncBadge(monitor)}</strong>
-            <span>Malezas: ${monitor.weeds || "-"} · Plagas/enfermedades: ${monitor.issues || "-"} · Recomendación: ${monitor.recommendation || "-"}</span>
+            <strong>${dateShort(monitor.date)} Â· ${lotName(monitor.lotId)} Â· ${monitor.crop || lotCrop(monitor.lotId) || "-"} Â· ${lotVariety(monitor.lotId) || monitor.variety || "-"} Â· ${monitor.cropStatus || "Sin estado"} ${syncBadge(monitor)}</strong>
+            <span>Malezas: ${monitor.weeds || "-"} Â· Plagas/enfermedades: ${monitor.issues || "-"} Â· RecomendaciÃ³n: ${monitor.recommendation || "-"}</span>
             <span class="item-actions">
               <button class="link-button" data-edit-monitor="${monitor.id}">Editar</button>
               <button class="link-button danger" data-delete-monitor="${monitor.id}">Eliminar</button>
@@ -2145,7 +2179,7 @@ function renderMonitorDetail(monitorId) {
 
   const monitor = data.monitors.find((item) => item.id === monitorId);
   if (!monitor) {
-    detail.innerHTML = `<div class="empty">Seleccioná un monitoreo para ver su ficha.</div>`;
+    detail.innerHTML = `<div class="empty">SeleccionÃ¡ un monitoreo para ver su ficha.</div>`;
     return;
   }
 
@@ -2154,14 +2188,14 @@ function renderMonitorDetail(monitorId) {
       <article><span>Fecha</span><strong>${dateShort(monitor.date)}</strong></article>
       <article><span>Lote</span><strong>${lotName(monitor.lotId)}</strong></article>
       <article><span>Cultivo</span><strong>${monitor.crop || lotCrop(monitor.lotId) || "-"}</strong></article>
-      <article><span>Variedad/Híbrido</span><strong>${lotVariety(monitor.lotId) || monitor.variety || "-"}</strong></article>
+      <article><span>Variedad/HÃ­brido</span><strong>${lotVariety(monitor.lotId) || monitor.variety || "-"}</strong></article>
       <article><span>Estado</span><strong>${monitor.cropStatus || "-"}</strong></article>
-      <article><span>Sincronización</span><strong>${syncBadge(monitor) || "Base cargada"}</strong></article>
+      <article><span>SincronizaciÃ³n</span><strong>${syncBadge(monitor) || "Base cargada"}</strong></article>
     </div>
     <div class="detail-notes">
       <p><b>Malezas</b><span>${monitor.weeds || "-"}</span></p>
       <p><b>Plagas / enfermedades</b><span>${monitor.issues || "-"}</span></p>
-      <p><b>Recomendación</b><span>${monitor.recommendation || "-"}</span></p>
+      <p><b>RecomendaciÃ³n</b><span>${monitor.recommendation || "-"}</span></p>
     </div>
     ${monitorPhotoSource(monitor.photo) ? `<img class="monitor-photo" src="${monitorPhotoSource(monitor.photo)}" alt="Foto de monitoreo" />` : ""}
     <div class="detail-actions">
@@ -2219,7 +2253,7 @@ function renderApplications() {
   renderApplicationDetail(highlightedApplicationId);
   const backButton = document.querySelector("#backToOrders");
   backButton.style.display = highlightedApplicationId ? "inline-flex" : "none";
-  backButton.textContent = applicationBackView === "ficha-lote" ? "Volver al lote" : "Volver a órdenes";
+  backButton.textContent = applicationBackView === "ficha-lote" ? "Volver al lote" : "Volver a Ã³rdenes";
   document.querySelectorAll("[data-open-application-detail]").forEach((row) => {
     row.addEventListener("click", () => {
       highlightedApplicationId = row.dataset.openApplicationDetail;
@@ -2237,7 +2271,7 @@ function renderApplicationDetail(applicationId) {
 
   const rows = data.applications.filter((application) => application.id === applicationId);
   if (!rows.length) {
-    detail.innerHTML = `<div class="empty">No hay detalle para esta aplicación.</div>`;
+    detail.innerHTML = `<div class="empty">No hay detalle para esta aplicaciÃ³n.</div>`;
     return;
   }
 
@@ -2258,9 +2292,9 @@ function renderApplicationDetail(applicationId) {
     <div class="application-detail-header">
       <div>
         <strong>${applicationId}</strong>
-        <span>${dateShort(first.date)} · ${lotName(first.lotId)} · ${number(first.hectares, 2)} ha</span>
+        <span>${dateShort(first.date)} Â· ${lotName(first.lotId)} Â· ${number(first.hectares, 2)} ha</span>
         <div class="detail-actions">
-          <button class="link-button primary" data-add-product-application="${applicationId}">Agregar producto</button>
+          <button class="link-button primary add-product-action" data-add-product-application="${applicationId}">Agregar producto</button>
         </div>
       </div>
       <div class="application-detail-kpis">
@@ -2399,7 +2433,7 @@ function openApplicationFormFromOrder(orderId) {
   form.elements.hectares.value = order.plannedHectares || order.Hectareas_planificadas || "";
   form.elements.laborCostHa.value = order.laborCostHa || 0;
   form.elements.productId.focus();
-  showToast("Aplicación vinculada a la orden");
+  showToast("AplicaciÃ³n vinculada a la orden");
 }
 
 function suggestedApplicationId(order) {
@@ -2482,7 +2516,7 @@ function finishOrder(orderId) {
 function deleteOrder(orderId) {
   const order = orderById(orderId);
   const linkedApplications = data.applications.filter((application) => application.orderId === orderId);
-  const extra = linkedApplications.length ? `\n\nTambién se eliminarán ${linkedApplications.length} renglón(es) de aplicación vinculados y se devolverá el stock local.` : "";
+  const extra = linkedApplications.length ? `\n\nTambiÃ©n se eliminarÃ¡n ${linkedApplications.length} renglÃ³n(es) de aplicaciÃ³n vinculados y se devolverÃ¡ el stock local.` : "";
   if (!order || !window.confirm(`Eliminar la orden "${order.task}"?${extra}`)) return;
   data.orders = data.orders.filter((item) => item.id !== orderId);
   linkedApplications.forEach((application) => {
@@ -2545,7 +2579,7 @@ function editApplication(key) {
   if (form.elements.totalQuantity) form.elements.totalQuantity.value = row.usedQuantity || "";
   form.elements.hectares.value = row.hectares || "";
   form.elements.laborCostHa.value = row.laborCostHa || 0;
-  form.querySelector('button[type="submit"]').textContent = "Actualizar aplicación";
+  form.querySelector('button[type="submit"]').textContent = "Actualizar aplicaciÃ³n";
   switchView("aplicaciones");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -2560,7 +2594,7 @@ function deleteApplication(key) {
   renderAll();
   highlightedApplicationId = row.id;
   renderApplications();
-  showToast("Aplicación eliminada");
+  showToast("AplicaciÃ³n eliminada");
 }
 
 function returnApplicationStock(application) {
@@ -2605,7 +2639,7 @@ function editProduct(productId) {
   form.elements.receiptNumber.value = "";
   form.elements.receiptDate.required = false;
   document.querySelector("#productFormTitle").textContent = "Editar producto";
-  document.querySelector("#productQuantityLabel").firstChild.textContent = "Stock físico total ";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Stock fÃ­sico total ";
   form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
   document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
   document.querySelector("#productFormBand")?.classList.remove("hidden-panel");
@@ -2621,10 +2655,11 @@ function cancelProductEdit() {
     form.elements.receiptDate.value = todayValue();
     resetDepositProductLines();
   }
-  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depÃ³sito";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   if (form) form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
-  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  document.querySelector("#productFormBand")?.classList.add("hidden-panel");
+  document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
   syncDepositLineButtons();
 }
 
@@ -2658,7 +2693,7 @@ function saveReceiptEdit(index) {
     editingReceiptIndex = -1;
     renderAll();
     renderProductDetail();
-    showToast("Número de remito actualizado");
+    showToast("NÃºmero de remito actualizado");
     return;
   }
   const nextQuantity = parseDecimal(values.quantity);
@@ -2687,9 +2722,9 @@ function deleteReceipt(index) {
   const targetEntries = receiptEntriesForProduct(targetProduct);
   if (!targetProduct || !removed) return;
   const detail = removed.detailed
-    ? `Se restarán ${number(removed.quantity, 2)} ${product.unit || ""} del stock físico.`
-    : "Es un antecedente sin cantidad discriminada: se quitará el número de remito sin modificar el stock.";
-  if (!window.confirm(`¿Eliminar el remito ${removed.number}?\n\n${detail}`)) return;
+    ? `Se restarÃ¡n ${number(removed.quantity, 2)} ${product.unit || ""} del stock fÃ­sico.`
+    : "Es un antecedente sin cantidad discriminada: se quitarÃ¡ el nÃºmero de remito sin modificar el stock.";
+  if (!window.confirm(`Â¿Eliminar el remito ${removed.number}?\n\n${detail}`)) return;
   targetEntries.splice(removed.sourceIndex, 1);
   if (removed.detailed) targetProduct.quantity = baseStock(targetProduct) - parseDecimal(removed.quantity);
   targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
@@ -2726,22 +2761,22 @@ function renderProductDetail() {
     <div class="application-detail-header">
       <div>
         <strong>${product.name}</strong>
-        <span>${product.type || "-"} · ${warehouses.join(", ") || "-"}</span>
+        <span>${product.type || "-"} Â· ${warehouses.join(", ") || "-"}</span>
       </div>
       <div class="application-detail-kpis">
-        <span>Físico ${number(stock.physical, 2)} ${product.unit || ""}</span>
+        <span>FÃ­sico ${number(stock.physical, 2)} ${product.unit || ""}</span>
         <span>Reservado ${number(stock.reserved, 2)} ${product.unit || ""}</span>
         <span>Disponible ${number(stock.available, 2)} ${product.unit || ""}</span>
       </div>
-      <button class="link-button" data-close-product-detail type="button">Volver al depósito</button>
+      <button class="link-button" data-close-product-detail type="button">Volver al depÃ³sito</button>
     </div>
     <div class="deposit-detail-grid">
       <div>
-        <h3>Ingresos al depósito</h3>
+        <h3>Ingresos al depÃ³sito</h3>
         ${receiptPhoto ? `<div class="receipt-photo-preview"><img src="${receiptPhoto}" alt="Foto de remito o factura" loading="lazy" /><a class="link-button" href="${receiptPhoto}" target="_blank" rel="noopener">Abrir foto</a></div>` : ""}
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Remito</th><th>Proveedor</th><th>Depósito</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
+            <thead><tr><th>Remito</th><th>Proveedor</th><th>DepÃ³sito</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
             <tbody>
               ${entries.map((entry, index) => editingReceiptIndex === index ? `<tr>
                 <td colspan="6">
@@ -2752,7 +2787,7 @@ function renderProductDetail() {
                       <label>Fecha <input name="date" type="date" value="${entry.date}" required /></label>
                       <label>Cantidad <input name="quantity" type="text" inputmode="decimal" value="${entry.quantity}" required /></label>
                       <label>Costo unit. <input name="unitCost" type="text" inputmode="decimal" value="${entry.unitCost}" required /></label>
-                    ` : `<span class="panel-note">Este ingreso anterior no guardó cantidad discriminada. Podés corregir el número de remito.</span>`}
+                    ` : `<span class="panel-note">Este ingreso anterior no guardÃ³ cantidad discriminada. PodÃ©s corregir el nÃºmero de remito.</span>`}
                     <div class="form-actions">
                       <button type="submit">Guardar cambios</button>
                       <button class="link-button" data-cancel-receipt-edit type="button">Cancelar</button>
@@ -2766,13 +2801,13 @@ function renderProductDetail() {
                 <td>${entry.detailed ? dateShort(entry.date) : "-"}</td>
                 <td>${entry.detailed ? `${number(entry.quantity, 2)} ${product.unit || ""}` : "Anterior sin detalle"}</td>
                 <td>${entry.detailed ? money(entry.unitCost) : "-"} <button class="link-button" data-edit-receipt="${index}" type="button">Editar</button> <button class="link-button danger" data-delete-receipt="${index}" type="button">Eliminar</button></td>
-              </tr>`).join("") || `<tr><td colspan="6">Todavía no hay ingresos identificados por remito.</td></tr>`}
+              </tr>`).join("") || `<tr><td colspan="6">TodavÃ­a no hay ingresos identificados por remito.</td></tr>`}
             </tbody>
           </table>
         </div>
       </div>
       <div>
-        <h3>Salidas vinculadas a órdenes</h3>
+        <h3>Salidas vinculadas a Ã³rdenes</h3>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Fecha</th><th>Orden</th><th>Lote</th><th>Estado</th><th>Cantidad</th></tr></thead>
@@ -2783,7 +2818,7 @@ function renderProductDetail() {
                 <td>${lotName(application.lotId || order?.lotId)}</td>
                 <td>${order?.status || "Aplicada"}</td>
                 <td>${number(applicationQuantity(application), 2)} ${product.unit || ""}</td>
-              </tr>`).join("") || `<tr><td colspan="5">No hay salidas vinculadas a órdenes.</td></tr>`}
+              </tr>`).join("") || `<tr><td colspan="5">No hay salidas vinculadas a Ã³rdenes.</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -2856,7 +2891,7 @@ function addUnitTotal(map, unit, value) {
 function formatUnitTotals(map) {
   const entries = Array.from(map.entries()).filter(([, value]) => Math.abs(value) >= 0.005);
   if (!entries.length) return "-";
-  return entries.map(([unit, value]) => `${number(value, 2)} ${unit}`.trim()).join(" · ");
+  return entries.map(([unit, value]) => `${number(value, 2)} ${unit}`.trim()).join(" Â· ");
 }
 
 function openProductFormForNew() {
@@ -2869,10 +2904,10 @@ function openProductFormForNew() {
   form.elements.receiptDate.required = true;
   form.elements.receiptDate.value = todayValue();
   if (form.elements.receiptPhotoFile) form.elements.receiptPhotoFile.value = "";
-  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+  document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depÃ³sito";
   document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
   form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
-  document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
+  document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
   band.classList.remove("hidden-panel");
   band.scrollIntoView({ behavior: "smooth", block: "start" });
   form.elements.receiptNumber?.focus();
@@ -2914,6 +2949,33 @@ function openMonitorFormForNew() {
   form.elements.lotId?.focus();
 }
 
+function cancelOrderForm() {
+  const form = document.querySelector("#orderForm");
+  editingOrderId = "";
+  if (form) resetForm(form);
+  form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar orden");
+  document.querySelector("#orderFormBand")?.classList.add("hidden-panel");
+}
+
+function cancelMonitorForm() {
+  const form = document.querySelector("#monitorForm");
+  editingMonitorId = "";
+  if (form) resetForm(form);
+  if (form?.elements?.photoFile) form.elements.photoFile.value = "";
+  form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar monitoreo");
+  document.querySelector("#monitorFormBand")?.classList.add("hidden-panel");
+}
+
+function cancelApplicationForm() {
+  const form = document.querySelector("#applicationForm");
+  editingApplicationKey = "";
+  applicationDraftOrderId = "";
+  if (form) resetForm(form);
+  form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar aplicación");
+  document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
+  renderApplications();
+}
+
 function renderProducts() {
   const nameFilter = normalizeName(document.querySelector("#productNameFilter")?.value);
   const receiptFilter = normalizeName(document.querySelector("#productReceiptFilter")?.value);
@@ -2921,18 +2983,18 @@ function renderProducts() {
   const dateTo = document.querySelector("#productReceiptDateTo")?.value || "";
   const dateSort = document.querySelector("#productReceiptDateSort")?.value || "desc";
   const productsForDisplay = displayProducts();
-  const catalog = [...new Set(productsForDisplay.map((product) => product.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const catalog = [...new Set(productsForDisplay.map((product) => product.name).filter(Boolean))].sort(compareText);
   const catalogList = document.querySelector("#productCatalogList");
   if (catalogList) catalogList.innerHTML = catalog.map((name) => `<option value="${name}"></option>`).join("");
-  const receiptCatalog = [...new Set(productsForDisplay.flatMap(receiptLabels))].sort((a, b) => a.localeCompare(b, "es"));
+  const receiptCatalog = [...new Set(productsForDisplay.flatMap(receiptLabels))].sort(compareText);
   const receiptCatalogList = document.querySelector("#receiptCatalogList");
   if (receiptCatalogList) receiptCatalogList.innerHTML = receiptCatalog.map((number) => `<option value="${number}"></option>`).join("");
-  const warehouseCatalog = [...new Set(data.products.map((product) => product.warehouse).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const warehouseCatalog = [...new Set(data.products.map((product) => product.warehouse).filter(Boolean))].sort(compareText);
   const warehouseList = document.querySelector("#warehouseCatalogList");
   if (warehouseList) warehouseList.innerHTML = warehouseCatalog.map((warehouse) => `<option value="${warehouse}"></option>`).join("");
   const supplierCatalog = [...new Set(data.products.flatMap((product) =>
     receiptEntriesForProduct(product).map((entry) => entry.supplier || product.supplier).concat(product.supplier || [])
-  ).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  ).filter(Boolean))].sort(compareText);
   const supplierList = document.querySelector("#supplierCatalogList");
   if (supplierList) supplierList.innerHTML = supplierCatalog.map((supplier) => `<option value="${supplier}"></option>`).join("");
   const filteredProducts = productsForDisplay.filter((product) => {
@@ -2955,13 +3017,13 @@ function renderProducts() {
         <td>${number(stock.available, 2)} ${product.unit}</td>
         <td>${money(unitCost)}</td>
         <td>${money(stock.available * unitCost)}</td>
-        <td>${warehouses.join(", ") || "-"} · ${statusBadge(product.status || "OK")}</td>
+        <td>${warehouses.join(", ") || "-"} Â· ${statusBadge(product.status || "OK")}</td>
         <td>${receiptLabels(product).join(", ") || "-"}</td>
         <td><button class="link-button" data-edit-product="${product.id}" type="button">Editar</button></td>
       </tr>
     `;
     })
-    .join("") || `<tr><td colspan="10">No hay productos para mostrar.</td></tr>`;
+    .join("") || `<tr><td colspan="13">No hay productos para mostrar.</td></tr>`;
 
   const purchases = productsForDisplay.flatMap((product) =>
     receiptEntries(product)
@@ -3067,25 +3129,62 @@ function renderProducts() {
   renderProductDetail();
 }
 
+const COST_CATEGORY_ORDER = ["labor", "herbicides", "insecticides", "fungicides", "fertilizers", "seeds", "adjuvants", "others"];
+const COST_CATEGORY_META = {
+  labor: { label: "Labores", color: "#2f7d4a" },
+  herbicides: { label: "Herbicidas", color: "#7aa35a" },
+  insecticides: { label: "Insecticidas", color: "#c46f1a" },
+  fungicides: { label: "Fungicidas", color: "#6d5bd0" },
+  fertilizers: { label: "Fertilizantes", color: "#3478a6" },
+  seeds: { label: "Semillas/Curasem.", color: "#b8791f" },
+  adjuvants: { label: "Coadyuvantes", color: "#0f766e" },
+  others: { label: "Otros", color: "#86938e" }
+};
+
+function emptyLotCostRecord(lot) {
+  const record = { lot, total: 0, entries: [] };
+  COST_CATEGORY_ORDER.forEach((category) => {
+    record[category] = 0;
+  });
+  return record;
+}
+
+function emptyCategoryTotals() {
+  const totals = { total: 0 };
+  COST_CATEGORY_ORDER.forEach((category) => {
+    totals[category] = 0;
+  });
+  return totals;
+}
+
 function costCategory(type) {
   const normalized = normalizeName(type);
   if (normalized.includes("herbicida")) return "herbicides";
+  if (normalized.includes("insecticida")) return "insecticides";
+  if (normalized.includes("fungicida")) return "fungicides";
   if (normalized.includes("fertilizante")) return "fertilizers";
   if (normalized.includes("semilla") || normalized.includes("inoculante") || normalized.includes("curasemilla")) return "seeds";
+  if (normalized.includes("coadyuvante")) return "adjuvants";
   return "others";
 }
 
+function lotCostParts(row) {
+  return COST_CATEGORY_ORDER
+    .map((category) => ({
+      category,
+      label: costCategoryLabel(category),
+      amount: parseDecimal(row?.[category]),
+      color: COST_CATEGORY_META[category]?.color || COST_CATEGORY_META.others.color
+    }))
+    .filter((part) => part.amount > 0);
+}
+
+function costForLot(lot) {
+  return buildLotCosts().find((item) => item.lot.id === lot.id) || emptyLotCostRecord(lot);
+}
+
 function buildLotCosts() {
-  const byLot = new Map(data.lots.map((lot) => [lot.id, {
-    lot,
-    labor: 0,
-    herbicides: 0,
-    fertilizers: 0,
-    seeds: 0,
-    others: 0,
-    total: 0,
-    entries: []
-  }]));
+  const byLot = new Map(data.lots.map((lot) => [lot.id, emptyLotCostRecord(lot)]));
 
   data.orders.forEach((order) => {
     if (order.status === "Cancelada") return;
@@ -3099,7 +3198,7 @@ function buildLotCosts() {
       date: order.date || "",
       orderId: order.id || "-",
       task: order.task || "Labor / servicio",
-      description: order.owner ? `Labor / servicio · ${order.owner}` : "Labor / servicio",
+      description: order.owner ? `Labor / servicio Â· ${order.owner}` : "Labor / servicio",
       category: "labor",
       quantity: hectares,
       unit: "ha",
@@ -3121,7 +3220,7 @@ function buildLotCosts() {
     item.entries.push({
       date: applicationPricingDate(application),
       orderId: application.orderId || "-",
-      task: order?.task || "Aplicación",
+      task: order?.task || "AplicaciÃ³n",
       description: application.productName || productName(application.productId),
       category,
       quantity: applicationQuantity(application),
@@ -3148,7 +3247,7 @@ function buildLotCosts() {
   });
 
   byLot.forEach((item) => {
-    item.total = item.labor + item.herbicides + item.fertilizers + item.seeds + item.others;
+    item.total = COST_CATEGORY_ORDER.reduce((sum, category) => sum + parseDecimal(item[category]), 0);
   });
 
   return Array.from(byLot.values()).filter((item) => item.total > 0).sort((a, b) => b.total - a.total);
@@ -3157,14 +3256,12 @@ function buildLotCosts() {
 function renderCosts() {
   const rows = buildLotCosts();
   const totals = rows.reduce((acc, row) => {
-    acc.labor += row.labor;
-    acc.herbicides += row.herbicides;
-    acc.fertilizers += row.fertilizers;
-    acc.seeds += row.seeds;
-    acc.others += row.others;
+    COST_CATEGORY_ORDER.forEach((category) => {
+      acc[category] += parseDecimal(row[category]);
+    });
     acc.total += row.total;
     return acc;
-  }, { labor: 0, herbicides: 0, fertilizers: 0, seeds: 0, others: 0, total: 0 });
+  }, emptyCategoryTotals());
 
   document.querySelector("#costSummary").innerHTML = `
     <article class="clickable-card" data-open-cost-category="all"><span>Total costos</span><strong>${money(totals.total)}</strong></article>
@@ -3174,29 +3271,23 @@ function renderCosts() {
   `;
 
   document.querySelector("#costCards").innerHTML = rows.map((row) => {
-    const parts = [
-      ["Labor", row.labor, "#2f7d4a"],
-      ["Herbicidas", row.herbicides, "#7aa35a"],
-      ["Fertilizantes", row.fertilizers, "#3478a6"],
-      ["Semillas", row.seeds, "#b8791f"],
-      ["Otros", row.others, "#86938e"]
-    ].filter((part) => part[1] > 0);
+    const parts = lotCostParts(row);
 
     return `
       <article class="cost-card" data-open-cost-lot="${row.lot.id}">
         <div class="cost-card-head">
-          <div><strong>${displayLotName(row.lot)}</strong><span>${row.lot.farm} · ${row.lot.campaign || "-"} · ${number(row.lot.hectares, 2)} ha</span></div>
+          <div><strong>${displayLotName(row.lot)}</strong><span>${row.lot.farm} Â· ${row.lot.campaign || "-"} Â· ${number(row.lot.hectares, 2)} ha</span></div>
           <b>${money(row.total)}</b>
         </div>
         <div class="cost-bar">
-          ${parts.map((part) => `<span style="width:${((part[1] / row.total) * 100).toFixed(2)}%; background:${part[2]}"></span>`).join("")}
+          ${parts.map((part) => `<span style="width:${((part.amount / row.total) * 100).toFixed(2)}%; background:${part.color}"></span>`).join("")}
         </div>
         <div class="cost-legend">
-          ${parts.map((part) => `<span>${part[0]} ${number((part[1] / row.total) * 100, 1)}%</span>`).join("")}
+          ${parts.map((part) => `<span>${part.label} ${number((part.amount / row.total) * 100, 1)}%</span>`).join("")}
         </div>
       </article>
     `;
-  }).join("") || `<div class="empty">Todavía no hay costos cargados.</div>`;
+  }).join("") || `<div class="empty">TodavÃ­a no hay costos cargados.</div>`;
 
   document.querySelector("#costTable").innerHTML = rows.map((row) => `
     <tr class="clickable-row" data-open-cost-lot="${row.lot.id}">
@@ -3205,13 +3296,16 @@ function renderCosts() {
       <td>${number(row.lot.hectares, 2)}</td>
       <td>${money(row.labor)}</td>
       <td>${money(row.herbicides)}</td>
+      <td>${money(row.insecticides)}</td>
+      <td>${money(row.fungicides)}</td>
       <td>${money(row.fertilizers)}</td>
       <td>${money(row.seeds)}</td>
+      <td>${money(row.adjuvants)}</td>
       <td>${money(row.others)}</td>
       <td>${money(row.total)}</td>
       <td>${money(row.total / row.lot.hectares)}</td>
     </tr>
-  `).join("") || `<tr><td colspan="10">Todavía no hay costos cargados.</td></tr>`;
+  `).join("") || `<tr><td colspan="13">TodavÃ­a no hay costos cargados.</td></tr>`;
 
   document.querySelectorAll("[data-open-cost-lot]").forEach((element) => {
     element.addEventListener("click", () => openLotCostDetail(element.dataset.openCostLot));
@@ -3224,7 +3318,7 @@ function renderCosts() {
 }
 
 function costCategoryLabel(category) {
-  return ({ labor: "Labor", herbicides: "Herbicidas", fertilizers: "Fertilizantes", seeds: "Semillas", others: "Otros" })[category] || "Otros";
+  return COST_CATEGORY_META[category]?.label || "Otros";
 }
 
 function openLotCostDetail(lotId) {
@@ -3293,7 +3387,7 @@ function renderCostCategoryDetail() {
               <td>${entry.pendingCost ? "Pendiente" : money(hectares ? entry.total / hectares : 0)}</td>
             </tr>
           `;
-        }).join("") || `<tr><td colspan="10">No hay movimientos para este rubro.</td></tr>`}</tbody>
+        }).join("") || `<tr><td colspan="13">No hay movimientos para este rubro.</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -3316,13 +3410,13 @@ function renderLotCostDetail() {
       <div>
         <span class="eyebrow">Costos del lote</span>
         <h2>${displayLotName(row.lot)}</h2>
-        <p>${row.lot.farm || "-"} · ${row.lot.campaign || "-"} · ${number(hectares, 2)} ha</p>
+        <p>${row.lot.farm || "-"} Â· ${row.lot.campaign || "-"} Â· ${number(hectares, 2)} ha</p>
       </div>
       <button class="link-button" id="backToCosts" type="button">Volver a costos</button>
     </div>
     <div class="cost-detail-summary">
       <article><span>Total acumulado</span><strong>${money(row.total)}</strong></article>
-      <article><span>Total por hectárea</span><strong>${money(hectares ? row.total / hectares : 0)}</strong></article>
+      <article><span>Total por hectÃ¡rea</span><strong>${money(hectares ? row.total / hectares : 0)}</strong></article>
       <article><span>Labores</span><strong>${money(row.labor)}</strong></article>
       <article><span>Insumos</span><strong>${money(row.total - row.labor)}</strong></article>
     </div>
@@ -3348,7 +3442,7 @@ function renderLotCostDetail() {
 function cropClass(crop) {
   const normalized = crop.toLowerCase();
   if (normalized.includes("soja")) return "crop-soja";
-  if (normalized.includes("maíz") || normalized.includes("maiz")) return "crop-maiz";
+  if (normalized.includes("maÃ­z") || normalized.includes("maiz")) return "crop-maiz";
   if (normalized.includes("trigo")) return "crop-trigo";
   if (normalized.includes("girasol")) return "crop-girasol";
   return "crop-default";
@@ -3359,7 +3453,7 @@ function canonicalCropName(crop) {
   const normalized = normalizeName(value);
   if (!value) return "";
   if (normalized.startsWith("soja") && (normalized.includes("1") || normalized.includes("1ra") || normalized.includes("1o"))) return "Soja 1ra";
-  if (normalized.startsWith("soja") && (normalized.includes("2") || normalized.includes("2da") || normalized.includes("2o") || normalized.includes("2°"))) return "Soja 2da";
+  if (normalized.startsWith("soja") && (normalized.includes("2") || normalized.includes("2da") || normalized.includes("2o") || normalized.includes("2Â°"))) return "Soja 2da";
   if (normalized.startsWith("soja")) return "Soja";
   if (normalized.includes("alfalfa")) return "Alfalfa";
   if (/^ma.*z/.test(normalized) || normalized.includes("maiz")) return "Maiz";
@@ -3376,7 +3470,7 @@ function renderRotation() {
   if (header && !document.querySelector("#toggleRotationCampaigns")) {
     const actions = document.createElement("div");
     actions.className = "panel-actions";
-    actions.innerHTML = `<span class="panel-note">Por lote y campaña</span><button class="link-button" id="toggleRotationCampaigns" type="button">Mostrar todas</button>`;
+    actions.innerHTML = `<span class="panel-note">Por lote y campaÃ±a</span><button class="link-button" id="toggleRotationCampaigns" type="button">Mostrar todas</button>`;
     header.querySelector(".panel-note")?.remove();
     header.appendChild(actions);
   }
@@ -3402,7 +3496,7 @@ function renderRotation() {
     ${rows || `<div class="empty">No hay datos para mostrar.</div>`}
   `;
   const toggle = document.querySelector("#toggleRotationCampaigns");
-  if (toggle) toggle.textContent = rotationShowAllCampaigns ? "Mostrar 3 campañas" : "Mostrar todas";
+  if (toggle) toggle.textContent = rotationShowAllCampaigns ? "Mostrar 3 campaÃ±as" : "Mostrar todas";
 }
 
 function campaignClosuresForLot(lot, campaign) {
@@ -3472,7 +3566,7 @@ function renderCampaignDetail() {
 
   const lot = data.lots.find((item) => item.id === selectedCampaignLotId);
   if (!lot) {
-    container.innerHTML = `<div class="empty">No encontré el lote seleccionado.</div>`;
+    container.innerHTML = `<div class="empty">No encontrÃ© el lote seleccionado.</div>`;
     return;
   }
 
@@ -3488,7 +3582,7 @@ function renderCampaignDetail() {
   const applicationCosts = editing?.applicationCostsManual ? (editing.applicationCosts || "") : "";
   const ensoNormalized = normalizeName(enso);
 
-  document.querySelector("#campaignDetailTitle").textContent = `${displayLotName(lot)}  ·  ${selectedCampaign}`;
+  document.querySelector("#campaignDetailTitle").textContent = `${displayLotName(lot)}  Â·  ${selectedCampaign}`;
 
   const rows = records.map((record) => `
     <tr>
@@ -3504,7 +3598,7 @@ function renderCampaignDetail() {
         <button class="link-button danger" data-delete-campaign-closure="${record.id}" type="button">Eliminar</button>
       </td>
     </tr>
-  `).join("") || `<tr><td colspan="8">Todavía no hay datos cargados para esta campaña.</td></tr>`;
+  `).join("") || `<tr><td colspan="8">TodavÃ­a no hay datos cargados para esta campaÃ±a.</td></tr>`;
 
   container.innerHTML = `
     <div class="campaign-detail-layout">
@@ -3512,15 +3606,15 @@ function renderCampaignDetail() {
         <div class="detail-grid campaign-summary">
           <article><span>Lote</span><strong>${displayLotName(lot)}</strong></article>
           <article><span>Campo</span><strong>${lot.farm || "-"}</strong></article>
-          <article><span>Hectáreas del lote</span><strong>${numberOptional(lot.hectares, 2)}</strong></article>
-          <article><span>Campaña</span><strong>${selectedCampaign}</strong></article>
+          <article><span>HectÃ¡reas del lote</span><strong>${numberOptional(lot.hectares, 2)}</strong></article>
+          <article><span>CampaÃ±a</span><strong>${selectedCampaign}</strong></article>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Cultivo</th>
-                <th>Var./Híb.</th>
+                <th>Var./HÃ­b.</th>
                 <th>ENSO</th>
                 <th>Ha</th>
                 <th>Kg cosechados</th>
@@ -3537,12 +3631,12 @@ function renderCampaignDetail() {
       <form id="campaignDetailForm" class="form-grid campaign-detail-form">
         <h3>${editing ? "Editar registro" : "Agregar registro"}</h3>
         <label>Cultivo <input name="crop" required value="${crop || ""}" placeholder="Soja 2da, Trigo, Maiz" /></label>
-        <label>Variedad/Híbrido <input name="variety" value="${variety || ""}" placeholder="Ceibo, DM 46R18, DK..." /></label>
+        <label>Variedad/HÃ­brido <input name="variety" value="${variety || ""}" placeholder="Ceibo, DM 46R18, DK..." /></label>
         <label>ENSO
           <select name="enso">
             <option value="">Sin dato</option>
-            <option ${ensoNormalized === "el nino" ? "selected" : ""}>El Niño</option>
-            <option ${ensoNormalized === "la nina" ? "selected" : ""}>La Niña</option>
+            <option ${ensoNormalized === "el nino" ? "selected" : ""}>El NiÃ±o</option>
+            <option ${ensoNormalized === "la nina" ? "selected" : ""}>La NiÃ±a</option>
             <option ${ensoNormalized === "neutral" ? "selected" : ""}>Neutral</option>
           </select>
         </label>
@@ -3550,9 +3644,9 @@ function renderCampaignDetail() {
         <label>Kg cosechados <input name="kgHarvested" type="number" min="0" step="1" value="${kgHarvested || ""}" /></label>
         <label>Precio por tonelada <input name="priceTon" type="number" min="0" step="0.01" value="${priceTon || ""}" /></label>
         <label>Otros costos <input name="otherCosts" type="number" min="0" step="0.01" value="${otherCosts || 0}" /></label>
-        <label>Costos aplicación <input name="applicationCosts" type="number" min="0" step="0.01" value="${applicationCosts}" placeholder="Automático o manual" /></label>
+        <label>Costos aplicaciÃ³n <input name="applicationCosts" type="number" min="0" step="0.01" value="${applicationCosts}" placeholder="AutomÃ¡tico o manual" /></label>
         <div class="form-actions">
-          <button type="submit">${editing ? "Guardar cambios" : "Agregar a campaña"}</button>
+          <button type="submit">${editing ? "Guardar cambios" : "Agregar a campaÃ±a"}</button>
           ${editing ? `<button class="link-button" id="cancelCampaignEdit" type="button">Cancelar</button>` : ""}
         </div>
       </form>
@@ -3570,7 +3664,7 @@ function saveCampaignDetailRecord(event) {
   const values = formData(event.currentTarget);
   const selectedCrop = values.crop === "Otro" ? String(values.cropOther || "").trim() : canonicalCropName(values.crop);
   if (!selectedCrop) {
-    showToast("Elegí o escribí un cultivo");
+    showToast("ElegÃ­ o escribÃ­ un cultivo");
     return;
   }
   const existing = editingCampaignClosureId ? data.closures.find((closure) => closure.id === editingCampaignClosureId) : null;
@@ -3620,13 +3714,13 @@ function saveCampaignDetailRecord(event) {
   saveData();
   renderAll();
   renderCampaignDetail();
-  showToast("Campaña guardada");
+  showToast("CampaÃ±a guardada");
 }
 
 function deleteCampaignDetailRecord(id) {
   const record = data.closures.find((closure) => closure.id === id);
   if (!record) return;
-  if (!window.confirm(`Eliminar ${record.crop || "este registro"} de la campaña ${record.campaign || selectedCampaign}?`)) return;
+  if (!window.confirm(`Eliminar ${record.crop || "este registro"} de la campaÃ±a ${record.campaign || selectedCampaign}?`)) return;
   data.closures = data.closures.filter((closure) => closure.id !== id);
   queueSync("closures", record, "delete");
   if (editingCampaignClosureId === id) editingCampaignClosureId = "";
@@ -3778,24 +3872,24 @@ function renderHistoryPanel() {
     <button class="history-crop-card ${historyCropCardClass(item.crop)} ${item.crop === selectedHistoryCrop ? "active" : ""}" type="button" data-history-crop="${item.crop}">
       <strong>${item.crop}</strong>
       <span>${item.avg ? `${number(item.avg)} kg/ha promedio` : "Sin rindes"}</span>
-      <small>${item.count} rindes · ${item.lots} lotes</small>
-      ${item.crop === "Otros" ? `<small>${item.cropNames.join(" · ")}</small>` : ""}
+      <small>${item.count} rindes Â· ${item.lots} lotes</small>
+      ${item.crop === "Otros" ? `<small>${item.cropNames.join(" Â· ")}</small>` : ""}
       <small>Mejor: ${item.best ? `${item.best.lot?.name || item.best.lotName || item.best.lotId || "Sin lote"} ${item.best.campaign} (${number(item.best.yieldKgHa)} kg/ha)` : "-"}</small>
     </button>
-  `).join("") || `<div class="empty">Todavía no hay rendimientos históricos cargados.</div>`;
+  `).join("") || `<div class="empty">TodavÃ­a no hay rendimientos histÃ³ricos cargados.</div>`;
 }
 
 function renderHistoryLotSearch() {
   const list = document.querySelector("#historyLotOptions");
   if (!list) return;
-  list.innerHTML = data.lots.map((lot) => `<option value="${displayLotName(lot)} · ${lot.farm || ""}"></option>`).join("");
+  list.innerHTML = data.lots.map((lot) => `<option value="${displayLotName(lot)} Â· ${lot.farm || ""}"></option>`).join("");
 }
 
 function findHistoryLotFromSearch() {
   const input = document.querySelector("#historyLotSearch");
   const value = normalizeName(input?.value || "");
-  return data.lots.find((lot) => normalizeName(`${displayLotName(lot)} · ${lot.farm || ""}`) === value)
-    || data.lots.find((lot) => normalizeName(`${lot.name} · ${lot.farm || ""}`) === value)
+  return data.lots.find((lot) => normalizeName(`${displayLotName(lot)} Â· ${lot.farm || ""}`) === value)
+    || data.lots.find((lot) => normalizeName(`${lot.name} Â· ${lot.farm || ""}`) === value)
     || data.lots.find((lot) => normalizeName(displayLotName(lot)) === value)
     || data.lots.find((lot) => normalizeName(lot.name) === value)
     || data.lots.find((lot) => value && normalizeName(`${displayLotName(lot)} ${lot.farm || ""}`).includes(value))
@@ -3823,7 +3917,7 @@ function renderHistoryCropDetail(records = historicalYieldRecords()) {
   const crop = selectedHistoryCrop;
   title.textContent = crop ? `Detalle de ${crop}` : "Detalle por cultivo";
   if (!crop) {
-    target.innerHTML = `<div class="empty">Elegí un cultivo para ver el detalle.</div>`;
+    target.innerHTML = `<div class="empty">ElegÃ­ un cultivo para ver el detalle.</div>`;
     return;
   }
 
@@ -3843,7 +3937,7 @@ function renderHistoryCropDetail(records = historicalYieldRecords()) {
     <div class="history-split">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Lote</th><th>Promedio kg/ha</th><th>Años con rinde</th></tr></thead>
+          <thead><tr><th>Lote</th><th>Promedio kg/ha</th><th>AÃ±os con rinde</th></tr></thead>
           <tbody>
             ${avgByLot.map((item) => `<tr><td>${item.lotLabel}</td><td><strong>${number(item.total / item.count)}</strong></td><td>${item.count}</td></tr>`).join("") || `<tr><td colspan="3">No hay rindes para promediar.</td></tr>`}
           </tbody>
@@ -3851,7 +3945,7 @@ function renderHistoryCropDetail(records = historicalYieldRecords()) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Campaña</th><th>Lote</th><th>Cultivo</th><th>Var./Híb.</th><th>ENSO</th><th>Rinde kg/ha</th></tr></thead>
+          <thead><tr><th>CampaÃ±a</th><th>Lote</th><th>Cultivo</th><th>Var./HÃ­b.</th><th>ENSO</th><th>Rinde kg/ha</th></tr></thead>
           <tbody>
             ${cropRecords.map((record) => `
               <tr>
@@ -3911,13 +4005,13 @@ function renderHistoryLotDetail(records = historicalYieldRecords()) {
         <article class="history-crop-card ${historyCropCardClass(item.crop)}">
           <strong>${item.crop}</strong>
           <span>${number(item.total / item.count)} kg/ha promedio</span>
-          <small>${item.count} campaña${item.count === 1 ? "" : "s"} con rinde</small>
+          <small>${item.count} campaÃ±a${item.count === 1 ? "" : "s"} con rinde</small>
         </article>
       `).join("") || `<div class="empty">Este lote no tiene rindes para promediar.</div>`}
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Campaña</th><th>Cultivo</th><th>Var./Híb.</th><th>ENSO</th><th>Ha</th><th>Kg cosechados</th><th>Rinde kg/ha</th></tr></thead>
+        <thead><tr><th>CampaÃ±a</th><th>Cultivo</th><th>Var./HÃ­b.</th><th>ENSO</th><th>Ha</th><th>Kg cosechados</th><th>Rinde kg/ha</th></tr></thead>
         <tbody>
           ${visibleLotRecords.map((record) => `
             <tr>
@@ -4062,11 +4156,11 @@ function bindForms() {
       : matchingProductByName(values.name);
     const isNewIngreso = !editingProductId && Boolean(existing);
     if (!editingProductId && !values.receiptDate) {
-      showToast("Indicá la fecha de compra o del remito");
+      showToast("IndicÃ¡ la fecha de compra o del remito");
       return;
     }
     if (!editingProductId && existing && values.receiptNumber && hasReceiptNumber(existing, values.receiptNumber)) {
-      showToast("Ese remito ya está cargado para este producto");
+      showToast("Ese remito ya estÃ¡ cargado para este producto");
       return;
     }
     const receiptNumbers = editingProductId
@@ -4098,7 +4192,7 @@ function bindForms() {
     resetForm(event.currentTarget);
     event.currentTarget.elements.receiptDate.required = true;
     event.currentTarget.elements.receiptDate.value = todayValue();
-    document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
+    document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depÃ³sito";
     document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
     event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
     document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
@@ -4116,6 +4210,7 @@ function bindForms() {
 
   const orderForm = document.querySelector("#orderForm");
   document.querySelector("#newOrderButton")?.addEventListener("click", openOrderFormForNew);
+  document.querySelector("#cancelOrderForm")?.addEventListener("click", cancelOrderForm);
   orderForm.elements.lotId.addEventListener("change", () => {
     applyOrderLotDefaultHectares();
     applyLotDefaultCrop(orderForm);
@@ -4189,6 +4284,7 @@ function bindForms() {
 
   const monitorForm = document.querySelector("#monitorForm");
   document.querySelector("#newMonitorButton")?.addEventListener("click", openMonitorFormForNew);
+  document.querySelector("#cancelMonitorForm")?.addEventListener("click", cancelMonitorForm);
   monitorForm.elements.lotId.addEventListener("change", () => {
     applyLotDefaultCrop(monitorForm);
     applyLotDefaultVariety(monitorForm);
@@ -4226,7 +4322,7 @@ function bindForms() {
       const photoFile = form.elements.photoFile.files?.[0];
       const photo = await readImageAsDataUrl(photoFile);
       if (photoFile && !photo) {
-        showToast("No se pudo procesar la foto. Probá elegirla nuevamente.");
+        showToast("No se pudo procesar la foto. ProbÃ¡ elegirla nuevamente.");
         return;
       }
       const record = {
@@ -4268,6 +4364,7 @@ function bindForms() {
   closureForm.elements.lotId.addEventListener("change", () => applyClosureDefaults(closureForm, true));
 
   const applicationForm = document.querySelector("#applicationForm");
+  document.querySelector("#cancelApplicationForm")?.addEventListener("click", cancelApplicationForm);
   applicationForm.elements.totalQuantity?.addEventListener("input", updateApplicationDoseFromTotal);
   applicationForm.elements.hectares.addEventListener("input", () => {
     if (applicationForm.elements.totalQuantity?.value) updateApplicationDoseFromTotal();
@@ -4324,7 +4421,7 @@ function bindForms() {
         queueSync("applications", data.applications[index], "update");
       }
       editingApplicationKey = "";
-      event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar aplicación";
+      event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar aplicaciÃ³n";
     } else {
       data.applications.push(record);
       queueSync("applications", record);
@@ -4341,7 +4438,7 @@ function bindForms() {
     window.setTimeout(() => {
       document.querySelector("#applicationDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 0);
-    showToast(wasEditingApplication ? "Aplicación actualizada" : "Aplicación guardada y stock actualizado");
+    showToast(wasEditingApplication ? "AplicaciÃ³n actualizada" : "AplicaciÃ³n guardada y stock actualizado");
   });
 
   document.querySelector("#closureForm").addEventListener("submit", (event) => {
@@ -4394,7 +4491,7 @@ function bindForms() {
       if (returnView === "ficha-campana") renderCampaignDetail();
       switchView(returnView);
     }
-    showToast("Campaña cerrada");
+    showToast("CampaÃ±a cerrada");
   });
 }
 
@@ -4492,7 +4589,7 @@ function bindHistoryTools() {
   document.querySelector("#openHistoryLot")?.addEventListener("click", () => {
     const lot = findHistoryLotFromSearch();
     if (!lot) {
-      showToast("Elegí un lote de la lista");
+      showToast("ElegÃ­ un lote de la lista");
       return;
     }
     openHistoryLot(lot.id);
@@ -4598,18 +4695,18 @@ function bindMapUpload() {
     if (!file) return;
 
     if (file.name.toLowerCase().endsWith(".kmz")) {
-      showToast("Por ahora cargá el archivo KML sin comprimir");
+      showToast("Por ahora cargÃ¡ el archivo KML sin comprimir");
       event.target.value = "";
       return;
     }
 
     try {
       const polygons = parseKml(await file.text());
-      if (!polygons.length) throw new Error("El KML no tiene polígonos.");
+      if (!polygons.length) throw new Error("El KML no tiene polÃ­gonos.");
       data.mapPolygons = polygons;
       saveData();
       renderMap(polygons[0].id);
-      showToast(`${polygons.length} polígonos cargados`);
+      showToast(`${polygons.length} polÃ­gonos cargados`);
     } catch (error) {
       showToast(error.message || "No se pudo cargar el KML");
     } finally {

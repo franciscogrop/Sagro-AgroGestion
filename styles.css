@@ -402,6 +402,20 @@ h2 {
   color: #fff;
 }
 
+.add-product-action {
+  border-color: #1f7a46;
+  background: #1f7a46;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(31, 122, 70, 0.2);
+  padding: 9px 13px;
+}
+
+.add-product-action:hover {
+  border-color: var(--green-dark);
+  background: var(--green-dark);
+  color: #fff;
+}
+
 .primary-action,
 #newOrderButton,
 #newDepositButton,
@@ -981,6 +995,16 @@ h2 {
   align-items: end;
 }
 
+.form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.form-grid > .form-actions {
+  grid-column: span 1;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -1520,6 +1544,90 @@ td {
 
 .lot-total-box b {
   font-size: 14px;
+}
+
+.lot-cost-breakdown-box {
+  background: #f8fbf7;
+  color: var(--text);
+  border-color: #cfe0d5;
+  gap: 12px;
+}
+
+.lot-cost-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lot-cost-totals article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lot-cost-breakdown-box .lot-cost-totals span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lot-cost-breakdown-box .lot-cost-totals strong {
+  color: var(--text);
+  font-size: 22px;
+}
+
+.lot-cost-bar {
+  display: flex;
+  height: 11px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6ece9;
+}
+
+.lot-cost-bar span {
+  min-width: 2px;
+}
+
+.lot-cost-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.lot-cost-grid div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lot-cost-grid i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.lot-cost-grid span,
+.lot-cost-grid strong,
+.lot-cost-grid em {
+  display: block;
+}
+
+.lot-cost-grid strong,
+.lot-cost-grid em {
+  grid-column: 2;
+}
+
+.lot-cost-grid em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
 }
 
 .map-row-stack {
@@ -2209,6 +2317,11 @@ td {
 
   .map-kpis,
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lot-cost-totals,
+  .lot-cost-grid {
     grid-template-columns: 1fr;
   }
 
