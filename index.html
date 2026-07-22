@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260706-botones-cancelar" />
+    <link rel="stylesheet" href="styles.css?v=20260722-resumen-insumos-ordenes" />
   </head>
   <body>
     <div class="app-shell">
@@ -304,7 +304,10 @@
 
         <section class="view" id="aplicaciones">
           <section class="form-band" id="applicationFormBand">
-            <h2>Nueva aplicación</h2>
+            <div class="form-band-header">
+              <h2>Nueva aplicación</h2>
+              <button class="link-button" id="backToOrdersFromApplicationForm" type="button">Volver a órdenes</button>
+            </div>
             <form id="applicationForm" class="form-grid">
               <label>Fecha <input name="date" type="date" required /></label>
               <label>Lote <select name="lotId" required></select></label>
@@ -622,6 +625,6 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260609-auditoria-stock"></script>
-    <script src="app.js?v=20260706-botones-cancelar"></script>
+    <script src="app.js?v=20260722-resumen-insumos-ordenes"></script>
   </body>
 </html>

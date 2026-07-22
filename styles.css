@@ -995,6 +995,26 @@ h2 {
   align-items: end;
 }
 
+.form-band-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.form-band-header h2 {
+  margin-bottom: 0;
+}
+
+.order-product-summary-filters {
+  align-items: end;
+}
+
+.order-product-summary-filters label {
+  min-width: 220px;
+}
+
 .form-actions {
   display: flex;
   gap: 10px;

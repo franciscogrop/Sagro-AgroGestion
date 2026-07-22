@@ -43,6 +43,7 @@ let syncRunning = false;
 let selectedMonitorId = "";
 let mapLayer = "satellite";
 let orderFilter = "Todas";
+let orderProductTextFilter = "";
 let highlightedApplicationId = "";
 let applicationDraftOrderId = "";
 let editingLotId = "";
@@ -2047,6 +2048,107 @@ function renderOrders() {
   document.querySelectorAll("[data-open-order-detail]").forEach((row) => {
     row.addEventListener("click", () => openOrderDetail(row.dataset.openOrderDetail, "ordenes"));
   });
+  renderOrderProductSummary();
+}
+
+function ensureOrderProductSummaryPanel() {
+  let panel = document.querySelector("#orderProductSummaryPanel");
+  if (panel) return panel;
+  const ordersPanel = document.querySelector("#ordersTable")?.closest(".panel");
+  if (!ordersPanel) return null;
+  ordersPanel.insertAdjacentHTML("afterend", `
+    <section class="panel order-product-summary-panel" id="orderProductSummaryPanel">
+      <div class="panel-header">
+        <div>
+          <h2>Productos por ordenes filtradas</h2>
+          <span class="panel-note">Suma productos segun estado de orden y busqueda.</span>
+        </div>
+        <div class="panel-actions order-product-summary-filters">
+          <label>Orden, lote o tarea <input id="orderProductSearch" placeholder="Buscar orden/lote/tarea" /></label>
+          <button class="link-button" id="clearOrderProductSearch" type="button">Limpiar</button>
+        </div>
+      </div>
+      <div id="orderProductSummaryMeta" class="panel-note"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Estado</th>
+              <th>Ordenes</th>
+              <th class="num">Cantidad total</th>
+            </tr>
+          </thead>
+          <tbody id="orderProductSummaryTable"></tbody>
+        </table>
+      </div>
+    </section>
+  `);
+  panel = document.querySelector("#orderProductSummaryPanel");
+  document.querySelector("#orderProductSearch")?.addEventListener("input", (event) => {
+    orderProductTextFilter = event.target.value;
+    renderOrderProductSummary();
+  });
+  document.querySelector("#clearOrderProductSearch")?.addEventListener("click", () => {
+    orderProductTextFilter = "";
+    const input = document.querySelector("#orderProductSearch");
+    if (input) input.value = "";
+    renderOrderProductSummary();
+  });
+  return panel;
+}
+
+function orderMatchesProductSummaryFilter(order, filter) {
+  if (!filter) return true;
+  const text = [
+    order.id,
+    dateShort(order.date),
+    lotName(order.lotId),
+    order.task,
+    order.owner,
+    order.status,
+    order.crop,
+    order.variety
+  ].map(normalizeName).join(" ");
+  return text.includes(filter);
+}
+
+function renderOrderProductSummary() {
+  const panel = ensureOrderProductSummaryPanel();
+  if (!panel) return;
+  const input = document.querySelector("#orderProductSearch");
+  if (input && input.value !== orderProductTextFilter) input.value = orderProductTextFilter;
+  const filter = normalizeName(orderProductTextFilter);
+  const orders = data.orders.filter((order) =>
+    (orderFilter === "Todas" || order.status === orderFilter)
+    && orderMatchesProductSummaryFilter(order, filter)
+  );
+  const orderIds = new Set(orders.map((order) => order.id));
+  const grouped = new Map();
+  data.applications
+    .filter((application) => application.orderId && orderIds.has(application.orderId))
+    .forEach((application) => {
+      const product = data.products.find((item) => item.id === application.productId);
+      const name = application.productName || product?.name || application.productId || "Sin producto";
+      const unit = product?.unit || application.unit || "";
+      const key = `${normalizeName(name)}|${normalizeName(unit)}`;
+      const item = grouped.get(key) || { name, unit, quantity: 0, orders: new Set(), statuses: new Set() };
+      item.quantity += Number(application.usedQuantity || application.totalQuantity || (Number(application.dose || 0) * Number(application.hectares || 0)) || 0);
+      item.orders.add(application.orderId);
+      item.statuses.add(orderById(application.orderId)?.status || "Sin estado");
+      grouped.set(key, item);
+    });
+
+  document.querySelector("#orderProductSummaryMeta").textContent = `Filtro de estado: ${orderFilter}. Ordenes consideradas: ${orders.length}.`;
+  const rows = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base", numeric: true }));
+  document.querySelector("#orderProductSummaryTable").innerHTML = rows.map((item) => `
+    <tr>
+      <td><strong>${item.name}</strong></td>
+      <td>${Array.from(item.statuses).join(", ")}</td>
+      <td>${item.orders.size}</td>
+      <td class="num">${number(item.quantity, 2)} ${item.unit}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="4">No hay productos vinculados a las ordenes filtradas.</td></tr>`;
 }
 
 function openOrderDetail(orderId, backView = "ordenes") {
@@ -4539,14 +4641,7 @@ function bindOrderFilters() {
 }
 
 function bindApplicationTools() {
-  document.querySelector("#showAllApplications").addEventListener("click", () => {
-    highlightedApplicationId = "";
-    applicationDraftOrderId = "";
-    applicationBackView = "ordenes";
-    applicationBackLotId = "";
-    renderApplications();
-  });
-  document.querySelector("#backToOrders").addEventListener("click", () => {
+  const goBack = () => {
     highlightedApplicationId = "";
     applicationDraftOrderId = "";
     renderApplications();
@@ -4557,7 +4652,16 @@ function bindApplicationTools() {
     }
     applicationBackView = "ordenes";
     applicationBackLotId = "";
+  };
+  document.querySelector("#showAllApplications").addEventListener("click", () => {
+    highlightedApplicationId = "";
+    applicationDraftOrderId = "";
+    applicationBackView = "ordenes";
+    applicationBackLotId = "";
+    renderApplications();
   });
+  document.querySelector("#backToOrders").addEventListener("click", goBack);
+  document.querySelector("#backToOrdersFromApplicationForm")?.addEventListener("click", goBack);
 }
 
 function bindMonitorTools() {
