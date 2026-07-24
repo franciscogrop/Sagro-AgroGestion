@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260724-unidad-deposito" />
+    <link rel="stylesheet" href="styles.css?v=20260724-producto-manual-unidad-numeros" />
   </head>
   <body>
     <div class="app-shell">
@@ -313,9 +313,11 @@
             <form id="applicationForm" class="form-grid">
               <label>Fecha <input name="date" type="date" required /></label>
               <label>Lote <select name="lotId" required></select></label>
-              <label>ID orden <input name="orderId" placeholder="ORD-001" /></label>
-              <label>ID aplicacion <input name="id" placeholder="APL-001" /></label>
+              <label>Nro. orden <input name="orderId" placeholder="ORD-001" /></label>
+              <label>Nro. aplicación <input name="id" placeholder="APL-001" /></label>
               <label>Producto <select name="productId" required></select></label>
+              <label class="manual-product hidden-panel">Producto no cargado <input name="manualProductName" placeholder="Nombre del producto" /></label>
+              <label class="manual-product hidden-panel">Unidad del producto <input name="manualProductUnit" placeholder="lt, kg, unidad" /></label>
               <label>Dosis/ha <input name="dose" type="text" inputmode="decimal" required /></label>
               <label>Total producto <input name="totalQuantity" type="text" inputmode="decimal" placeholder="Calcula dosis" /></label>
               <label>Hectáreas <input name="hectares" type="text" inputmode="decimal" required /></label>
@@ -627,6 +629,6 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260609-auditoria-stock"></script>
-    <script src="app.js?v=20260724-unidad-deposito"></script>
+    <script src="app.js?v=20260724-producto-manual-unidad-numeros"></script>
   </body>
 </html>

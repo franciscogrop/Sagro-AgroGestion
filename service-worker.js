@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v90-unidad-deposito";
+const CACHE_NAME = "gestion-agro-cache-v92-producto-manual-unidad-numeros";
 const ASSETS = [
   "./",
   "./index.html",
