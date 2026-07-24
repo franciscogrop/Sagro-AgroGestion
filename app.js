@@ -2972,6 +2972,7 @@ function saveReceiptEdit(index) {
   const targetEntries = receiptEntriesForProduct(targetProduct);
   if (!targetProduct || !form || !previous) return;
   const values = formData(form);
+  targetProduct.unit = values.unit?.trim() || targetProduct.unit || "";
   if (!previous.detailed) {
     targetEntries[previous.sourceIndex] = { number: values.number.trim(), supplier: values.supplier || previous.supplier || "", detailed: false };
     targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
@@ -3071,6 +3072,7 @@ function renderProductDetail() {
                   <form class="form-grid compact-form" id="receiptEditForm">
                     <label>Remito <input name="number" value="${entry.number}" required /></label>
                     <label>Proveedor <input name="supplier" value="${entry.supplier || ""}" list="supplierCatalogList" /></label>
+                    <label>Unidad <input name="unit" value="${entry.sourceUnit || product.unit || ""}" placeholder="lt, kg, unidad" required /></label>
                     ${entry.detailed ? `
                       <label>Fecha <input name="date" type="date" value="${entry.date}" required /></label>
                       <label>Cantidad <input name="quantity" type="text" inputmode="decimal" value="${entry.quantity}" required /></label>
