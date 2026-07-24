@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260722-columnas-insumos-ordenes" />
+    <link rel="stylesheet" href="styles.css?v=20260724-detalle-insumos-ordenes" />
   </head>
   <body>
     <div class="app-shell">
@@ -242,6 +242,8 @@
                 <button class="order-filter" data-order-filter="Pendiente" type="button">Pendientes</button>
                 <button class="order-filter" data-order-filter="En curso" type="button">En curso</button>
                 <button class="order-filter" data-order-filter="Finalizada" type="button">Finalizadas</button>
+                <label>Cultivo <select id="orderCropFilter"></select></label>
+                <label>Lote <select id="orderLotFilter"></select></label>
               </div>
             </div>
             <div class="table-wrap">
@@ -625,6 +627,6 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260609-auditoria-stock"></script>
-    <script src="app.js?v=20260722-columnas-insumos-ordenes"></script>
+    <script src="app.js?v=20260724-detalle-insumos-ordenes"></script>
   </body>
 </html>

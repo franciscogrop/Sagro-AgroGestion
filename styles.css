@@ -361,7 +361,18 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: end;
   gap: 8px;
+}
+
+.order-filters label {
+  min-width: 150px;
+  max-width: 210px;
+}
+
+.order-filters select {
+  min-height: 32px;
+  padding: 5px 9px;
 }
 
 .order-filter {
@@ -457,6 +468,40 @@ h2 {
   padding: 4px 7px;
 }
 
+.link-button.small {
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px 7px;
+}
+
+.clickable-row.selected {
+  background: #eef6ff;
+}
+
+.order-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.order-product-detail {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.order-product-detail:empty {
+  display: none;
+}
+
+.compact-detail-header {
+  padding: 0 0 10px;
+}
+
+.order-product-detail-table table {
+  min-width: 720px;
+}
+
 .lot-cell {
   font-weight: 800;
 }
@@ -483,19 +528,32 @@ h2 {
   justify-content: space-between;
   align-items: flex-start;
   gap: 14px;
-  padding: 14px 18px 10px;
+  padding: 18px 20px 12px;
   background: #fffaf0;
   border-bottom: 1px solid var(--line);
 }
 
-.application-detail-header > div:first-child::before {
-  content: "Numero de orden";
-  display: block;
+.application-order-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.application-order-label {
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: .04em;
   text-transform: uppercase;
+}
+
+.application-order-number {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.application-order-heading > span:not(.application-order-label):not(.application-order-number) {
+  display: none;
 }
 
 .application-detail-header strong,
@@ -504,8 +562,8 @@ h2 {
 }
 
 .application-detail-header strong {
-  margin-top: 2px;
-  font-size: 14px;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.02;
 }
 
 .application-detail-header span,
@@ -518,12 +576,13 @@ h2 {
 .application-detail-kpis {
   display: grid;
   gap: 4px;
+  padding: 0 18px 14px;
   text-align: right;
 }
 
 .application-order-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  grid-template-columns: 1.25fr 1.25fr repeat(3, minmax(120px, 1fr));
   gap: 10px;
   padding: 12px 18px 16px;
   background: #fffaf0;
@@ -552,8 +611,13 @@ h2 {
   line-height: 1.16;
 }
 
-.application-order-summary .application-summary-main strong {
+.application-order-summary article:nth-child(1) strong,
+.application-order-summary article:nth-child(2) strong {
   font-size: 22px;
+}
+
+.application-share-actions {
+  justify-content: flex-end;
 }
 
 @media (max-width: 760px) {
@@ -567,6 +631,10 @@ h2 {
     text-align: left;
   }
 
+  .application-share-actions {
+    justify-content: flex-start;
+  }
+
   .application-order-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 10px 12px 14px;
@@ -575,6 +643,74 @@ h2 {
   .application-order-summary article {
     min-height: 68px;
     padding: 10px;
+  }
+
+  .application-order-summary .cost-only {
+    grid-column: 1 / -1;
+  }
+
+  .application-detail .table-wrap table {
+    min-width: 620px;
+  }
+
+  .application-detail .table-wrap th,
+  .application-detail .table-wrap td {
+    padding: 8px 10px;
+  }
+}
+
+@media print {
+  body.printing-application-order {
+    background: #fff;
+  }
+
+  body.printing-application-order .sidebar,
+  body.printing-application-order .topbar,
+  body.printing-application-order .nav,
+  body.printing-application-order #applicationFormBand,
+  body.printing-application-order #aplicaciones > .panel > .panel-header,
+  body.printing-application-order #aplicaciones > .panel > .table-wrap,
+  body.printing-application-order .view:not(#aplicaciones),
+  body.printing-application-order .detail-actions,
+  body.printing-application-order .row-actions,
+  body.printing-application-order .cost-only,
+  body.printing-application-order .toast {
+    display: none !important;
+  }
+
+  body.printing-application-order .app-shell,
+  body.printing-application-order .main,
+  body.printing-application-order #aplicaciones,
+  body.printing-application-order .panel,
+  body.printing-application-order .application-detail {
+    display: block !important;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    border: 0;
+    box-shadow: none;
+  }
+
+  body.printing-application-order .application-detail-header,
+  body.printing-application-order .application-order-summary {
+    background: #fff;
+    border-bottom: 1px solid #cbd5e1;
+  }
+
+  body.printing-application-order .application-order-summary {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  body.printing-application-order table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  body.printing-application-order th,
+  body.printing-application-order td {
+    border-bottom: 1px solid #d9e2ec;
+    padding: 9px 8px;
   }
 }
 
