@@ -2074,9 +2074,9 @@ function ensureOrderProductSummaryPanel() {
           <thead>
             <tr>
               <th>Producto</th>
+              <th class="num">Cantidad total</th>
               <th>Estado</th>
               <th>Ordenes</th>
-              <th class="num">Cantidad total</th>
             </tr>
           </thead>
           <tbody id="orderProductSummaryTable"></tbody>
@@ -2144,9 +2144,9 @@ function renderOrderProductSummary() {
   document.querySelector("#orderProductSummaryTable").innerHTML = rows.map((item) => `
     <tr>
       <td><strong>${item.name}</strong></td>
-      <td>${Array.from(item.statuses).join(", ")}</td>
-      <td>${item.orders.size}</td>
       <td class="num">${number(item.quantity, 2)} ${item.unit}</td>
+      <td>${Array.from(item.statuses).join(", ")}</td>
+      <td>${Array.from(item.orders).join(", ")}</td>
     </tr>
   `).join("") || `<tr><td colspan="4">No hay productos vinculados a las ordenes filtradas.</td></tr>`;
 }
