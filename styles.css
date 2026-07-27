@@ -533,6 +533,19 @@ h2 {
   border-bottom: 1px solid var(--line);
 }
 
+.button-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.receipt-header-form {
+  flex: 1 1 520px;
+  margin: 0;
+}
+
 .application-order-heading {
   display: grid;
   gap: 4px;

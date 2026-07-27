@@ -54,6 +54,7 @@ let editingProductId = "";
 let selectedProductId = "";
 let selectedReceiptKey = "";
 let editingReceiptLineKey = "";
+let editingReceiptHeader = false;
 let selectedCostLotId = "";
 let selectedCostCategory = "";
 let editingReceiptIndex = -1;
@@ -121,10 +122,16 @@ function saveData() {
 
 function loadSyncQueue() {
   try {
-    return JSON.parse(safeStorageGet(syncQueueKey) || "[]");
+    const queue = JSON.parse(safeStorageGet(syncQueueKey) || "[]");
+    return Array.isArray(queue) ? queue.map(normalizeSyncQueueItem) : [];
   } catch {
     return [];
   }
+}
+
+function normalizeSyncQueueItem(item) {
+  if (item?.record) delete item.record.baseUpdatedAt;
+  return item;
 }
 
 function saveSyncQueue() {
@@ -161,11 +168,10 @@ function safeStorageSet(key, value) {
 }
 
 function queueSync(table, record, action = "append") {
-  const baseUpdatedAt = record?.updatedAt || "";
   const updatedAt = new Date().toISOString();
   if (record) record.updatedAt = updatedAt;
   const syncRecord = enrichRecordForSync(record);
-  syncRecord.baseUpdatedAt = baseUpdatedAt;
+  delete syncRecord.baseUpdatedAt;
   syncRecord.updatedAt = updatedAt;
   const item = {
     syncId: uid("sync"),
@@ -3121,6 +3127,7 @@ function openReceiptDetail(key) {
   selectedReceiptKey = key;
   selectedProductId = "";
   editingReceiptLineKey = "";
+  editingReceiptHeader = false;
   renderReceiptDetail();
   switchView("ficha-deposito");
 }
@@ -3128,13 +3135,74 @@ function openReceiptDetail(key) {
 function closeReceiptDetail() {
   selectedReceiptKey = "";
   editingReceiptLineKey = "";
+  editingReceiptHeader = false;
   document.querySelector("#productDetail").innerHTML = "";
   switchView("stock");
 }
 
+function editReceiptHeader() {
+  editingReceiptHeader = true;
+  editingReceiptLineKey = "";
+  renderReceiptDetail();
+}
+
 function editReceiptLine(key) {
+  editingReceiptHeader = false;
   editingReceiptLineKey = key;
   renderReceiptDetail();
+}
+
+function saveReceiptHeaderEdit() {
+  const rows = receiptRowsByKey(selectedReceiptKey).filter((entry) => entry.detailed);
+  const form = document.querySelector("#receiptHeaderEditForm");
+  if (!rows.length || !form) return;
+  const values = formData(form);
+  const nextNumber = values.number.trim() || "Sin remito";
+  const nextDate = values.date || todayValue();
+  const nextSupplier = values.supplier.trim();
+  const nextWarehouse = values.warehouse.trim();
+  const changedProducts = new Set();
+
+  rows.forEach((entry) => {
+    const targetProduct = data.products.find((item) => item.id === entry.sourceProductId);
+    if (!targetProduct) return;
+    const targetEntries = receiptEntriesForProduct(targetProduct);
+    const targetEntry = targetEntries[entry.sourceIndex];
+    if (!targetEntry) return;
+    targetEntries[entry.sourceIndex] = {
+      ...targetEntry,
+      number: nextNumber,
+      date: nextDate,
+      supplier: nextSupplier,
+      detailed: true
+    };
+    targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+    targetProduct.supplier = nextSupplier || targetProduct.supplier || "";
+    if (nextWarehouse) targetProduct.warehouse = nextWarehouse;
+    refreshProductCurrentUnitCost(targetProduct);
+    delete targetProduct.calculatedStock;
+    delete targetProduct.applicationUse;
+    if (!changedProducts.has(targetProduct.id)) {
+      changedProducts.add(targetProduct.id);
+      queueSync("products", targetProduct, "update");
+      recalculateApplicationsForProduct(targetProduct);
+    }
+  });
+
+  const firstProduct = data.products.find((item) => item.id === rows[0]?.sourceProductId);
+  selectedReceiptKey = receiptGroupKey({
+    number: nextNumber,
+    date: nextDate,
+    supplier: nextSupplier,
+    product: firstProduct,
+    sourceWarehouse: nextWarehouse || firstProduct?.warehouse || ""
+  });
+  editingReceiptHeader = false;
+  editingReceiptLineKey = "";
+  saveData();
+  renderAll();
+  renderReceiptDetail();
+  showToast("Datos del remito actualizados");
 }
 
 function saveReceiptLineEdit(lineKey) {
@@ -3190,16 +3258,32 @@ function renderReceiptDetail() {
   const group = receiptGroupFromRows(rows);
   detail.innerHTML = `
     <div class="application-detail-header">
-      <div>
-        <span>Ficha de remito</span>
-        <strong>${group.number}</strong>
-        <span>${dateShort(group.date)} · ${group.supplier || "Sin proveedor"} · ${group.warehouse || "Sin depósito"}</span>
-      </div>
+      ${editingReceiptHeader ? `
+        <form class="form-grid compact-form receipt-header-form" id="receiptHeaderEditForm">
+          <label>Remito <input name="number" value="${group.number || ""}" required /></label>
+          <label>Fecha <input name="date" type="date" value="${group.date || ""}" required /></label>
+          <label>Proveedor <input name="supplier" value="${group.supplier || ""}" list="supplierCatalogList" /></label>
+          <label>Depósito <input name="warehouse" value="${group.warehouse || ""}" list="warehouseCatalogList" /></label>
+          <div class="form-actions">
+            <button type="submit">Guardar remito</button>
+            <button class="link-button" data-cancel-receipt-header-edit type="button">Cancelar</button>
+          </div>
+        </form>
+      ` : `
+        <div>
+          <span>Ficha de remito</span>
+          <strong>${group.number}</strong>
+          <span>${dateShort(group.date)} · ${group.supplier || "Sin proveedor"} · ${group.warehouse || "Sin depósito"}</span>
+        </div>
+      `}
       <div class="application-detail-kpis">
         <span>${group.rows.length} productos</span>
         <span>Total ${money(group.total)}</span>
       </div>
-      <button class="link-button" data-close-receipt-detail type="button">Volver al depósito</button>
+      <div class="button-row">
+        ${editingReceiptHeader ? "" : `<button class="link-button primary" data-edit-receipt-header type="button">Editar remito</button>`}
+        <button class="link-button" data-close-receipt-detail type="button">Volver al depósito</button>
+      </div>
     </div>
     <div class="table-wrap">
       <table>
@@ -3253,6 +3337,15 @@ function renderReceiptDetail() {
     </div>
   `;
   detail.querySelector("[data-close-receipt-detail]")?.addEventListener("click", closeReceiptDetail);
+  detail.querySelector("[data-edit-receipt-header]")?.addEventListener("click", editReceiptHeader);
+  detail.querySelector("[data-cancel-receipt-header-edit]")?.addEventListener("click", () => {
+    editingReceiptHeader = false;
+    renderReceiptDetail();
+  });
+  detail.querySelector("#receiptHeaderEditForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveReceiptHeaderEdit();
+  });
   detail.querySelectorAll("[data-edit-receipt-line]").forEach((button) => button.addEventListener("click", () => editReceiptLine(button.dataset.editReceiptLine)));
   detail.querySelector("[data-cancel-receipt-line-edit]")?.addEventListener("click", () => {
     editingReceiptLineKey = "";

@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v95-ficha-remito";
+const CACHE_NAME = "gestion-agro-cache-v97-editar-remito-completo";
 const ASSETS = [
   "./",
   "./index.html",
