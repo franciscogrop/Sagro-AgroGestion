@@ -52,6 +52,8 @@ let applicationDraftOrderId = "";
 let editingLotId = "";
 let editingProductId = "";
 let selectedProductId = "";
+let selectedReceiptKey = "";
+let editingReceiptLineKey = "";
 let selectedCostLotId = "";
 let selectedCostCategory = "";
 let editingReceiptIndex = -1;
@@ -551,6 +553,50 @@ function receiptEntries(product) {
       sourceIndex: index
     }))
   );
+}
+
+function allReceiptRows() {
+  return data.products.flatMap((product) =>
+    receiptEntriesForProduct(product).map((entry, index) => ({
+      ...entry,
+      product,
+      sourceProductId: product.id,
+      sourceProductName: product.name,
+      sourceWarehouse: product.warehouse,
+      sourceUnit: product.unit,
+      sourceIndex: index,
+      supplier: entry.supplier || product.supplier || ""
+    }))
+  );
+}
+
+function receiptGroupKey(entry) {
+  return [
+    entry.number || "Sin remito",
+    entry.date || "",
+    entry.supplier || "",
+    entry.sourceWarehouse || entry.product?.warehouse || ""
+  ].map((value) => encodeURIComponent(String(value || ""))).join("|");
+}
+
+function receiptLineKey(entry) {
+  return [entry.sourceProductId, entry.sourceIndex].map((value) => encodeURIComponent(String(value ?? ""))).join("|");
+}
+
+function receiptRowsByKey(key) {
+  return allReceiptRows().filter((entry) => receiptGroupKey(entry) === key);
+}
+
+function receiptGroupFromRows(rows) {
+  const first = rows[0] || {};
+  return {
+    number: first.number || "Sin remito",
+    date: first.date || "",
+    supplier: first.supplier || "",
+    warehouse: first.sourceWarehouse || first.product?.warehouse || "",
+    rows,
+    total: rows.reduce((sum, entry) => sum + parseDecimal(entry.quantity) * parseDecimal(entry.unitCost), 0)
+  };
 }
 
 function datedReceiptEntries(product) {
@@ -2993,7 +3039,9 @@ function cancelProductEdit() {
 
 function closeProductDetail() {
   selectedProductId = "";
+  selectedReceiptKey = "";
   editingReceiptIndex = -1;
+  editingReceiptLineKey = "";
   document.querySelector("#productDetail").innerHTML = "";
   switchView("stock");
 }
@@ -3067,6 +3115,153 @@ function deleteReceipt(index) {
   renderAll();
   renderProductDetail();
   showToast("Remito eliminado");
+}
+
+function openReceiptDetail(key) {
+  selectedReceiptKey = key;
+  selectedProductId = "";
+  editingReceiptLineKey = "";
+  renderReceiptDetail();
+  switchView("ficha-deposito");
+}
+
+function closeReceiptDetail() {
+  selectedReceiptKey = "";
+  editingReceiptLineKey = "";
+  document.querySelector("#productDetail").innerHTML = "";
+  switchView("stock");
+}
+
+function editReceiptLine(key) {
+  editingReceiptLineKey = key;
+  renderReceiptDetail();
+}
+
+function saveReceiptLineEdit(lineKey) {
+  const rows = receiptRowsByKey(selectedReceiptKey);
+  const previous = rows.find((entry) => receiptLineKey(entry) === lineKey);
+  const form = document.querySelector("#receiptLineEditForm");
+  const targetProduct = data.products.find((item) => item.id === previous?.sourceProductId);
+  if (!previous || !targetProduct || !form) return;
+  const values = formData(form);
+  const targetEntries = receiptEntriesForProduct(targetProduct);
+  const previousQuantity = parseDecimal(previous.quantity);
+  const nextQuantity = parseDecimal(values.quantity);
+  targetProduct.name = values.productName.trim() || targetProduct.name;
+  targetProduct.type = values.type.trim() || targetProduct.type || "";
+  targetProduct.unit = values.unit.trim() || targetProduct.unit || "";
+  targetProduct.warehouse = values.warehouse.trim() || targetProduct.warehouse || "";
+  targetProduct.supplier = values.supplier.trim() || targetProduct.supplier || "";
+  targetEntries[previous.sourceIndex] = {
+    number: values.number.trim() || previous.number || "Sin remito",
+    date: values.date || previous.date || todayValue(),
+    quantity: nextQuantity,
+    unitCost: parseDecimal(values.unitCost),
+    supplier: values.supplier.trim() || "",
+    detailed: true
+  };
+  targetProduct.quantity = baseStock(targetProduct) + nextQuantity - previousQuantity;
+  targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+  refreshProductCurrentUnitCost(targetProduct);
+  delete targetProduct.calculatedStock;
+  delete targetProduct.applicationUse;
+  queueSync("products", targetProduct, "update");
+  recalculateApplicationsForProduct(targetProduct);
+  saveData();
+  selectedReceiptKey = receiptGroupKey({
+    ...targetEntries[previous.sourceIndex],
+    product: targetProduct,
+    sourceWarehouse: targetProduct.warehouse
+  });
+  editingReceiptLineKey = "";
+  renderAll();
+  renderReceiptDetail();
+  showToast("Producto del remito actualizado");
+}
+
+function renderReceiptDetail() {
+  const detail = document.querySelector("#productDetail");
+  if (!detail) return;
+  const rows = receiptRowsByKey(selectedReceiptKey).filter((entry) => entry.detailed);
+  if (!selectedReceiptKey || !rows.length) {
+    detail.innerHTML = `<div class="empty">No encontré ese remito.</div>`;
+    return;
+  }
+  const group = receiptGroupFromRows(rows);
+  detail.innerHTML = `
+    <div class="application-detail-header">
+      <div>
+        <span>Ficha de remito</span>
+        <strong>${group.number}</strong>
+        <span>${dateShort(group.date)} · ${group.supplier || "Sin proveedor"} · ${group.warehouse || "Sin depósito"}</span>
+      </div>
+      <div class="application-detail-kpis">
+        <span>${group.rows.length} productos</span>
+        <span>Total ${money(group.total)}</span>
+      </div>
+      <button class="link-button" data-close-receipt-detail type="button">Volver al depósito</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Producto</th>
+            <th>Tipo</th>
+            <th>Unidad</th>
+            <th>Cantidad</th>
+            <th>Costo unit.</th>
+            <th>Total</th>
+            <th>Depósito</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${group.rows.map((entry) => {
+            const lineKey = receiptLineKey(entry);
+            const product = entry.product || data.products.find((item) => item.id === entry.sourceProductId) || {};
+            return editingReceiptLineKey === lineKey ? `<tr>
+              <td colspan="8">
+                <form class="form-grid compact-form" id="receiptLineEditForm">
+                  <label>Remito <input name="number" value="${entry.number || ""}" required /></label>
+                  <label>Fecha <input name="date" type="date" value="${entry.date || ""}" required /></label>
+                  <label>Proveedor <input name="supplier" value="${entry.supplier || product.supplier || ""}" list="supplierCatalogList" /></label>
+                  <label>Depósito <input name="warehouse" value="${entry.sourceWarehouse || product.warehouse || ""}" list="warehouseCatalogList" /></label>
+                  <label>Producto <input name="productName" value="${entry.sourceProductName || product.name || ""}" list="productCatalogList" required /></label>
+                  <label>Tipo <input name="type" value="${product.type || ""}" list="productTypeList" /></label>
+                  <label>Unidad <input name="unit" value="${entry.sourceUnit || product.unit || ""}" required /></label>
+                  <label>Cantidad <input name="quantity" type="text" inputmode="decimal" value="${entry.quantity || ""}" required /></label>
+                  <label>Costo unit. <input name="unitCost" type="text" inputmode="decimal" value="${entry.unitCost || ""}" required /></label>
+                  <div class="form-actions">
+                    <button type="submit">Guardar cambios</button>
+                    <button class="link-button" data-cancel-receipt-line-edit type="button">Cancelar</button>
+                  </div>
+                </form>
+              </td>
+            </tr>` : `<tr>
+              <td><strong>${entry.sourceProductName || product.name || "-"}</strong></td>
+              <td>${product.type || "-"}</td>
+              <td>${entry.sourceUnit || product.unit || "-"}</td>
+              <td>${number(entry.quantity, 2)} ${entry.sourceUnit || product.unit || ""}</td>
+              <td>${money(entry.unitCost)}</td>
+              <td>${money(parseDecimal(entry.quantity) * parseDecimal(entry.unitCost))}</td>
+              <td>${entry.sourceWarehouse || product.warehouse || "-"}</td>
+              <td><button class="link-button" data-edit-receipt-line="${lineKey}" type="button">Editar</button></td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+  detail.querySelector("[data-close-receipt-detail]")?.addEventListener("click", closeReceiptDetail);
+  detail.querySelectorAll("[data-edit-receipt-line]").forEach((button) => button.addEventListener("click", () => editReceiptLine(button.dataset.editReceiptLine)));
+  detail.querySelector("[data-cancel-receipt-line-edit]")?.addEventListener("click", () => {
+    editingReceiptLineKey = "";
+    renderReceiptDetail();
+  });
+  detail.querySelector("#receiptLineEditForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveReceiptLineEdit(editingReceiptLineKey);
+  });
 }
 
 function renderProductDetail() {
@@ -3396,7 +3591,7 @@ function renderProducts() {
   purchases.forEach((entry) => {
     const supplier = entry.supplier || entry.product.supplier || "";
     const warehouse = entry.sourceWarehouse || entry.product.warehouse || "";
-    const key = [entry.number || "Sin remito", entry.date || "", supplier, warehouse].join("|");
+    const key = receiptGroupKey({ ...entry, supplier, sourceWarehouse: warehouse });
     if (!receiptGroups.has(key)) {
       receiptGroups.set(key, {
         number: entry.number || "Sin remito",
@@ -3405,7 +3600,7 @@ function renderProducts() {
         warehouse,
         products: [],
         total: 0,
-        firstProductId: entry.product.id
+        key
       });
     }
     const group = receiptGroups.get(key);
@@ -3415,7 +3610,7 @@ function renderProducts() {
   const completeReceiptsTable = ensureCompleteReceiptsTable();
   if (completeReceiptsTable) {
     completeReceiptsTable.innerHTML = Array.from(receiptGroups.values()).map((group) => `
-      <tr class="clickable-row" data-open-product="${group.firstProductId}">
+      <tr class="clickable-row" data-open-receipt="${group.key}">
         <td>${dateShort(group.date)}</td>
         <td>${group.number}</td>
         <td>${group.supplier || "-"}</td>
@@ -3448,15 +3643,13 @@ function renderProducts() {
       switchView("ficha-deposito");
     });
   });
-  document.querySelectorAll("#completeReceiptsTable tr[data-open-product]").forEach((row) => {
+  document.querySelectorAll("#completeReceiptsTable tr[data-open-receipt]").forEach((row) => {
     row.addEventListener("click", () => {
-      selectedProductId = row.dataset.openProduct;
-      editingReceiptIndex = -1;
-      renderProductDetail();
-      switchView("ficha-deposito");
+      openReceiptDetail(row.dataset.openReceipt);
     });
   });
-  renderProductDetail();
+  if (selectedReceiptKey) renderReceiptDetail();
+  else renderProductDetail();
 }
 
 const COST_CATEGORY_ORDER = ["labor", "herbicides", "insecticides", "fungicides", "fertilizers", "seeds", "adjuvants", "others"];
