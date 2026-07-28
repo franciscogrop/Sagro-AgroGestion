@@ -2386,7 +2386,9 @@ function openOrderDetail(orderId, backView = "ordenes") {
   const order = orderById(orderId);
   orderDetailBackLotId = backView === "ficha-lote" ? order?.lotId || orderDetailBackLotId : "";
   const backButton = document.querySelector("#backFromOrderDetail");
-  if (backButton) backButton.textContent = backView === "ficha-lote" ? "Volver al lote" : "Volver a ordenes";
+  if (backButton) {
+    backButton.textContent = backView === "ficha-lote" ? "Volver al lote" : backView === "ficha-deposito" ? "Volver al insumo" : "Volver a ordenes";
+  }
   renderOrderDetail(orderId);
   switchView("ficha-orden");
 }
@@ -3430,9 +3432,9 @@ function renderProductDetail() {
           <table>
             <thead><tr><th>Fecha</th><th>Orden</th><th>Lote</th><th>Estado</th><th>Cantidad</th></tr></thead>
             <tbody>
-              ${outputs.map(({ application, order }) => `<tr>
+              ${outputs.map(({ application, order }) => `<tr class="clickable-row" data-open-output-order="${order?.id || application.orderId || ""}">
                 <td>${dateShort(application.date || order?.date)}</td>
-                <td>${orderShortLabel(order || application.orderId)}</td>
+                <td><button class="link-button small" type="button">${orderShortLabel(order || application.orderId)}</button></td>
                 <td>${lotName(application.lotId || order?.lotId)}</td>
                 <td>${order?.status || "Aplicada"}</td>
                 <td>${number(applicationQuantity(application), 2)} ${product.unit || ""}</td>
@@ -3444,6 +3446,11 @@ function renderProductDetail() {
     </div>
   `;
   detail.querySelector("[data-close-product-detail]")?.addEventListener("click", closeProductDetail);
+  detail.querySelectorAll("[data-open-output-order]").forEach((row) => {
+    row.addEventListener("click", () => {
+      if (row.dataset.openOutputOrder) openOrderDetail(row.dataset.openOutputOrder, "ficha-deposito");
+    });
+  });
   detail.querySelectorAll("[data-edit-receipt]").forEach((button) => button.addEventListener("click", () => editReceipt(Number(button.dataset.editReceipt))));
   detail.querySelectorAll("[data-delete-receipt]").forEach((button) => button.addEventListener("click", () => deleteReceipt(Number(button.dataset.deleteReceipt))));
   detail.querySelector("[data-cancel-receipt-edit]")?.addEventListener("click", () => {
@@ -5211,6 +5218,10 @@ function bindLotTools() {
   document.querySelector("#backFromOrderDetail")?.addEventListener("click", () => {
     if (orderDetailBackView === "ficha-lote" && orderDetailBackLotId) {
       openLotDetail(orderDetailBackLotId);
+    } else if (orderDetailBackView === "ficha-deposito") {
+      if (selectedProductId) renderProductDetail();
+      if (selectedReceiptKey) renderReceiptDetail();
+      switchView("ficha-deposito");
     } else {
       switchView(orderDetailBackView || "ordenes");
     }
