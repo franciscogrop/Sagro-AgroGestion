@@ -3474,7 +3474,13 @@ function renderProductDetail() {
     return;
   }
   const stock = stockForProduct(product);
-  const entries = receiptEntries(product);
+  const entries = receiptEntries(product)
+    .map((entry, index) => ({ ...entry, detailIndex: index }))
+    .sort((a, b) => {
+      const dateComparison = String(b.date || "").localeCompare(String(a.date || ""));
+      if (dateComparison) return dateComparison;
+      return String(b.number || "").localeCompare(String(a.number || ""), "es", { sensitivity: "base", numeric: true });
+    });
   const receiptPhoto = receiptPhotoSource(product);
   const warehouses = productWarehouseLabels(product);
   const outputs = data.applications
@@ -3502,7 +3508,7 @@ function renderProductDetail() {
           <table>
             <thead><tr><th>Remito</th><th>Proveedor</th><th>Depósito</th><th>Fecha</th><th>Cantidad</th><th>Costo unit.</th></tr></thead>
             <tbody>
-              ${entries.map((entry, index) => editingReceiptIndex === index ? `<tr>
+              ${entries.map((entry) => editingReceiptIndex === entry.detailIndex ? `<tr>
                 <td colspan="6">
                   <form class="form-grid compact-form" id="receiptEditForm">
                     <label>Remito <input name="number" value="${entry.number}" required /></label>
@@ -3525,7 +3531,7 @@ function renderProductDetail() {
                 <td>${entry.sourceWarehouse || "-"}</td>
                 <td>${entry.detailed ? dateShort(entry.date) : "-"}</td>
                 <td>${entry.detailed ? `${number(entry.quantity, 2)} ${product.unit || ""}` : "Anterior sin detalle"}</td>
-                <td>${entry.detailed ? money(entry.unitCost) : "-"} <button class="link-button" data-edit-receipt="${index}" type="button">Editar</button> <button class="link-button danger" data-delete-receipt="${index}" type="button">Eliminar</button></td>
+                <td>${entry.detailed ? money(entry.unitCost) : "-"} <button class="link-button" data-edit-receipt="${entry.detailIndex}" type="button">Editar</button> <button class="link-button danger" data-delete-receipt="${entry.detailIndex}" type="button">Eliminar</button></td>
               </tr>`).join("") || `<tr><td colspan="6">Todavía no hay ingresos identificados por remito.</td></tr>`}
             </tbody>
           </table>
