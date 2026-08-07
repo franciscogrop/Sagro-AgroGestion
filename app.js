@@ -1179,12 +1179,14 @@ function orderShortLabel(orderOrId) {
 
 function productMatchesApplication(product, application) {
   const group = productGroupProducts(product);
-  const groupNames = new Set(group.map((item) => normalizeName(item.name)).filter(Boolean));
-  const applicationName = normalizeName(application.productName);
-  if (applicationName) return groupNames.has(applicationName);
   const groupIds = new Set(group.map((item) => item.id));
   if (application.productId && groupIds.has(application.productId)) return true;
-  return false;
+  const groupNames = new Set(group.map((item) => normalizeName(item.name)).filter(Boolean));
+  const applicationNames = [
+    application.productName,
+    productName(application.productId)
+  ].map(normalizeName).filter(Boolean);
+  return applicationNames.some((name) => groupNames.has(name));
 }
 
 function baseStock(product) {
