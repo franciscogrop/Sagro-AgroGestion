@@ -44,6 +44,7 @@ let selectedMonitorId = "";
 let mapLayer = "satellite";
 let orderFilter = "Todas";
 let orderProductTextFilter = "";
+let orderProductFilter = "Todos";
 let orderCropFilter = "Todos";
 let orderLotFilter = "Todos";
 let selectedOrderProductKey = "";
@@ -696,7 +697,7 @@ function displayProducts() {
     const current = groups.get(key);
     if (!current || receiptEntriesForProduct(product).length > receiptEntriesForProduct(current).length) groups.set(key, product);
   });
-  return Array.from(groups.values()).sort(compareProductsByName);
+  return Array.from(groups.values()).sort(compareProductsByStock);
 }
 
 function compareText(a, b) {
@@ -707,6 +708,26 @@ function compareProductsByName(a, b) {
   const byName = compareText(a?.name, b?.name);
   if (byName) return byName;
   return compareText(a?.unit, b?.unit);
+}
+
+function compareProductsByStock(a, b) {
+  const aStock = stockForProduct(a).physical;
+  const bStock = stockForProduct(b).physical;
+  const aPositive = aStock > 0;
+  const bPositive = bStock > 0;
+  if (aPositive || bPositive) {
+    if (aPositive !== bPositive) return aPositive ? -1 : 1;
+    if (Math.abs(bStock - aStock) > 0.005) return bStock - aStock;
+    return compareProductsByName(a, b);
+  }
+  const aNegative = aStock < 0;
+  const bNegative = bStock < 0;
+  if (aNegative || bNegative) {
+    if (aNegative !== bNegative) return aNegative ? -1 : 1;
+    if (Math.abs(aStock - bStock) > 0.005) return aStock - bStock;
+    return compareProductsByName(a, b);
+  }
+  return compareProductsByName(a, b);
 }
 
 function applyExistingProductDefaults() {
@@ -895,13 +916,20 @@ function clearDepositFilters() {
 
 function clearOrderFilters() {
   orderFilter = "Todas";
+  orderProductFilter = "Todos";
+  orderProductTextFilter = "";
   orderCropFilter = "Todos";
   orderLotFilter = "Todos";
-  document.querySelectorAll(".order-filter").forEach((item) => item.classList.toggle("active", item.dataset.orderFilter === orderFilter));
+  const status = document.querySelector("#orderStatusFilter");
   const crop = document.querySelector("#orderCropFilter");
   const lot = document.querySelector("#orderLotFilter");
+  const product = document.querySelector("#orderProductFilter");
+  const productSearch = document.querySelector("#orderProductSearch");
+  if (status) status.value = "Todas";
   if (crop) crop.value = "Todos";
   if (lot) lot.value = "Todos";
+  if (product) product.value = "Todos";
+  if (productSearch) productSearch.value = "";
   renderOrders();
 }
 
@@ -2166,8 +2194,16 @@ function orderEffectiveCrop(order) {
 }
 
 function populateOrderExtraFilters() {
+  const statusSelect = document.querySelector("#orderStatusFilter");
   const cropSelect = document.querySelector("#orderCropFilter");
   const lotSelect = document.querySelector("#orderLotFilter");
+  const productSelect = document.querySelector("#orderProductFilter");
+  if (statusSelect) {
+    const statuses = ["Todas", "Pendiente", "En curso", "Finalizada", "Cancelada"];
+    statusSelect.innerHTML = statuses.map((status) => `<option value="${status}">${status === "Todas" ? "Todos" : status}</option>`).join("");
+    statusSelect.value = statuses.includes(orderFilter) ? orderFilter : "Todas";
+    orderFilter = statusSelect.value;
+  }
   if (cropSelect) {
     const crops = Array.from(new Set(data.orders.map(orderEffectiveCrop).filter(Boolean)))
       .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base", numeric: true }));
@@ -2182,13 +2218,37 @@ function populateOrderExtraFilters() {
     lotSelect.value = lotIds.includes(orderLotFilter) ? orderLotFilter : "Todos";
     orderLotFilter = lotSelect.value;
   }
+  if (productSelect) {
+    const products = Array.from(new Set(data.applications
+      .map((application) => application.productName || productName(application.productId))
+      .filter(Boolean)))
+      .sort(compareText);
+    productSelect.innerHTML = [`<option value="Todos">Todos</option>`, ...products.map((product) => `<option value="${product}">${product}</option>`)].join("");
+    const selectedProduct = products.find((product) => normalizeName(product) === normalizeName(orderProductFilter));
+    productSelect.value = selectedProduct || "Todos";
+    orderProductFilter = productSelect.value;
+  }
 }
 
 function orderMatchesMainFilters(order) {
   if (orderFilter !== "Todas" && order.status !== orderFilter) return false;
   if (orderCropFilter !== "Todos" && normalizeName(orderEffectiveCrop(order)) !== normalizeName(orderCropFilter)) return false;
   if (orderLotFilter !== "Todos" && order.lotId !== orderLotFilter) return false;
+  if (orderProductFilter !== "Todos" && !orderHasProduct(order, orderProductFilter)) return false;
   return true;
+}
+
+function orderHasProduct(order, productFilter) {
+  const target = normalizeName(productFilter);
+  if (!target) return true;
+  return data.applications.some((application) => {
+    if (application.orderId !== order.id) return false;
+    const names = [
+      application.productName,
+      productName(application.productId)
+    ].map(normalizeName).filter(Boolean);
+    return names.some((name) => name === target);
+  });
 }
 
 function ensureOrderProductSummaryPanel() {
@@ -2280,7 +2340,7 @@ function renderOrderProductSummary() {
       grouped.set(key, item);
     });
 
-  document.querySelector("#orderProductSummaryMeta").textContent = `Estado: ${orderFilter}. Cultivo: ${orderCropFilter}. Lote: ${orderLotFilter === "Todos" ? "Todos" : lotName(orderLotFilter)}. Ordenes consideradas: ${orders.length}.`;
+  document.querySelector("#orderProductSummaryMeta").textContent = `Estado: ${orderFilter}. Cultivo: ${orderCropFilter}. Lote: ${orderLotFilter === "Todos" ? "Todos" : lotName(orderLotFilter)}. Producto: ${orderProductFilter}. Ordenes consideradas: ${orders.length}.`;
   const rows = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base", numeric: true }));
   document.querySelector("#orderProductSummaryTable").innerHTML = rows.map((item) => `
     <tr class="clickable-row ${item.key === selectedOrderProductKey ? "selected" : ""}" data-order-product-key="${encodeURIComponent(item.key)}">
@@ -3125,6 +3185,49 @@ function deleteReceipt(index) {
   showToast("Remito eliminado");
 }
 
+function deleteReceiptGroup() {
+  const rows = receiptRowsByKey(selectedReceiptKey).filter((entry) => entry.detailed);
+  if (!rows.length) return;
+  const group = receiptGroupFromRows(rows);
+  const detail = rows
+    .map((entry) => `${entry.sourceProductName || entry.product?.name || "Producto"}: ${number(entry.quantity, 2)} ${entry.sourceUnit || entry.product?.unit || ""}`)
+    .join("\n");
+  if (!window.confirm(`¿Eliminar el remito ${group.number} completo?\n\nSe quitarán ${rows.length} productos:\n${detail}`)) return;
+
+  const changedProducts = new Set();
+  rows
+    .slice()
+    .sort((a, b) => String(b.sourceProductId).localeCompare(String(a.sourceProductId)) || b.sourceIndex - a.sourceIndex)
+    .forEach((entry) => {
+      const targetProduct = data.products.find((item) => item.id === entry.sourceProductId);
+      if (!targetProduct) return;
+      const targetEntries = receiptEntriesForProduct(targetProduct);
+      if (!targetEntries[entry.sourceIndex]) return;
+      targetEntries.splice(entry.sourceIndex, 1);
+      targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
+      targetProduct.quantity = receiptQuantityTotal(targetProduct);
+      refreshProductCurrentUnitCost(targetProduct);
+      delete targetProduct.calculatedStock;
+      delete targetProduct.applicationUse;
+      changedProducts.add(targetProduct.id);
+    });
+
+  changedProducts.forEach((productId) => {
+    const product = data.products.find((item) => item.id === productId);
+    if (!product) return;
+    queueSync("products", product, "update");
+    recalculateApplicationsForProduct(product);
+  });
+
+  selectedReceiptKey = "";
+  editingReceiptLineKey = "";
+  editingReceiptHeader = false;
+  saveData();
+  renderAll();
+  switchView("stock");
+  showToast("Remito eliminado");
+}
+
 function openReceiptDetail(key) {
   selectedReceiptKey = key;
   selectedProductId = "";
@@ -3284,6 +3387,7 @@ function renderReceiptDetail() {
       </div>
       <div class="button-row">
         ${editingReceiptHeader ? "" : `<button class="link-button primary" data-edit-receipt-header type="button">Editar remito</button>`}
+        ${editingReceiptHeader ? "" : `<button class="link-button danger" data-delete-receipt-group type="button">Eliminar remito</button>`}
         <button class="link-button" data-close-receipt-detail type="button">Volver al depósito</button>
       </div>
     </div>
@@ -3340,6 +3444,7 @@ function renderReceiptDetail() {
   `;
   detail.querySelector("[data-close-receipt-detail]")?.addEventListener("click", closeReceiptDetail);
   detail.querySelector("[data-edit-receipt-header]")?.addEventListener("click", editReceiptHeader);
+  detail.querySelector("[data-delete-receipt-group]")?.addEventListener("click", deleteReceiptGroup);
   detail.querySelector("[data-cancel-receipt-header-edit]")?.addEventListener("click", () => {
     editingReceiptHeader = false;
     renderReceiptDetail();
@@ -5163,13 +5268,18 @@ function bindNavigation() {
 }
 
 function bindOrderFilters() {
-  document.querySelectorAll(".order-filter, [data-order-filter-shortcut]").forEach((button) => {
+  document.querySelectorAll("[data-order-filter-shortcut]").forEach((button) => {
     button.addEventListener("click", () => {
-      orderFilter = button.dataset.orderFilter || button.dataset.orderFilterShortcut;
-      document.querySelectorAll(".order-filter").forEach((item) => item.classList.toggle("active", item.dataset.orderFilter === orderFilter));
+      orderFilter = button.dataset.orderFilterShortcut || "Todas";
+      const statusSelect = document.querySelector("#orderStatusFilter");
+      if (statusSelect) statusSelect.value = orderFilter;
       renderOrders();
       document.querySelector("#ordersTable")?.closest(".panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  });
+  document.querySelector("#orderStatusFilter")?.addEventListener("change", (event) => {
+    orderFilter = event.target.value || "Todas";
+    renderOrders();
   });
   document.querySelector("#orderCropFilter")?.addEventListener("change", (event) => {
     orderCropFilter = event.target.value || "Todos";
@@ -5177,6 +5287,10 @@ function bindOrderFilters() {
   });
   document.querySelector("#orderLotFilter")?.addEventListener("change", (event) => {
     orderLotFilter = event.target.value || "Todos";
+    renderOrders();
+  });
+  document.querySelector("#orderProductFilter")?.addEventListener("change", (event) => {
+    orderProductFilter = event.target.value || "Todos";
     renderOrders();
   });
 }

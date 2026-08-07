@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260727-ot-clic-insumo" />
+    <link rel="stylesheet" href="styles.css?v=20260807-filtros-orden-stock" />
   </head>
   <body>
     <div class="app-shell">
@@ -238,12 +238,10 @@
               <h2>Órdenes registradas</h2>
               <div class="order-filters">
                 <button class="link-button" id="newOrderButton" type="button">Nueva orden</button>
-                <button class="order-filter active" data-order-filter="Todas" type="button">Todas</button>
-                <button class="order-filter" data-order-filter="Pendiente" type="button">Pendientes</button>
-                <button class="order-filter" data-order-filter="En curso" type="button">En curso</button>
-                <button class="order-filter" data-order-filter="Finalizada" type="button">Finalizadas</button>
+                <label>Estado <select id="orderStatusFilter"></select></label>
                 <label>Cultivo <select id="orderCropFilter"></select></label>
                 <label>Lote <select id="orderLotFilter"></select></label>
+                <label>Producto <select id="orderProductFilter"></select></label>
               </div>
             </div>
             <div class="table-wrap">
@@ -629,6 +627,6 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260609-auditoria-stock"></script>
-    <script src="app.js?v=20260727-ot-clic-insumo"></script>
+    <script src="app.js?v=20260807-filtros-orden-stock"></script>
   </body>
 </html>
