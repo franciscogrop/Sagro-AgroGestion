@@ -1444,8 +1444,10 @@ function readImageAsDataUrl(file, maxSize = 720, maxCharacters = 24000) {
           if (dataUrl.length <= maxCharacters) break;
           if (quality > 0.38) quality -= 0.1;
           else {
-            width = Math.max(280, Math.round(width * 0.78));
-            height = Math.max(210, Math.round(height * 0.78));
+            const minWidth = maxCharacters < 14000 ? 140 : 280;
+            const minHeight = maxCharacters < 14000 ? 105 : 210;
+            width = Math.max(minWidth, Math.round(width * 0.78));
+            height = Math.max(minHeight, Math.round(height * 0.78));
             quality = 0.58;
           }
         }
@@ -1504,11 +1506,13 @@ async function readMonitorPhotos(input) {
   const files = Array.from(input?.files || []).filter((file) => file.type?.startsWith("image/")).slice(0, 4);
   if (!files.length) return [];
   const photos = [];
+  let skipped = 0;
   for (const file of files) {
-    const photo = await readImageAsDataUrl(file, 620, 11500);
-    if (!photo) throw new Error("No se pudo procesar una foto. Probá elegirla nuevamente o usar una imagen más chica.");
-    photos.push(photo);
+    const photo = await readImageAsDataUrl(file, 520, 11500) || await readImageAsDataUrl(file, 360, 9000);
+    if (photo) photos.push(photo);
+    else skipped += 1;
   }
+  if (skipped) showToast(`${skipped} foto${skipped === 1 ? "" : "s"} no se pudieron procesar. Se guardan las demás.`);
   return photos;
 }
 
