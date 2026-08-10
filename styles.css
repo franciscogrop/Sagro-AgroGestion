@@ -1428,6 +1428,42 @@ td {
   border: 1px solid var(--line);
 }
 
+.monitor-photo-preview-list,
+.monitor-photo-strip,
+.monitor-photo-gallery {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.monitor-photo-preview-list {
+  grid-column: 1 / -1;
+  margin-top: -6px;
+}
+
+.monitor-photo-strip {
+  margin-top: 8px;
+}
+
+.monitor-photo-gallery {
+  margin-top: 12px;
+}
+
+.monitor-photo-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: #f7faf6;
+}
+
+.monitor-photo-gallery .monitor-photo-thumb {
+  width: min(180px, 44vw);
+  height: 130px;
+}
+
 .monitor-photo {
   display: block;
   width: min(100%, 560px);

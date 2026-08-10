@@ -1458,8 +1458,58 @@ function readImageAsDataUrl(file, maxSize = 720, maxCharacters = 24000) {
 }
 
 function monitorPhotoSource(photo) {
-  const value = String(photo || "");
-  return value.startsWith("data:image/") || /^https?:\/\//i.test(value) ? value : "";
+  return monitorPhotoSources(photo)[0] || "";
+}
+
+function monitorPhotoSources(photo) {
+  if (!photo) return [];
+  if (Array.isArray(photo)) return photo.filter((value) => isPhotoSource(value));
+  const value = String(photo || "").trim();
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter((item) => isPhotoSource(item));
+  } catch (error) {
+    // Los monitoreos anteriores guardaban una sola foto como texto.
+  }
+  return value.split(/\n+/).map((item) => item.trim()).filter((item) => isPhotoSource(item));
+}
+
+function isPhotoSource(value) {
+  const text = String(value || "");
+  return text.startsWith("data:image/") || /^https?:\/\//i.test(text);
+}
+
+function serializeMonitorPhotos(photos) {
+  const clean = photos.filter((item) => isPhotoSource(item)).slice(0, 4);
+  return clean.length ? JSON.stringify(clean) : "";
+}
+
+function renderMonitorPhotoThumbs(photo, className = "monitor-photo-preview-list") {
+  const photos = monitorPhotoSources(photo);
+  return photos.length
+    ? `<div class="${className}">${photos.map((src, index) => `<img class="monitor-photo-thumb" src="${src}" alt="Foto ${index + 1} de monitoreo" loading="lazy" />`).join("")}</div>`
+    : "";
+}
+
+function updateMonitorPhotoPreview(photos = []) {
+  const target = document.querySelector("#monitorPhotoPreview");
+  if (!target) return;
+  target.innerHTML = photos.length
+    ? photos.map((src, index) => `<img class="monitor-photo-thumb" src="${src}" alt="Foto ${index + 1} seleccionada" loading="lazy" />`).join("")
+    : "";
+}
+
+async function readMonitorPhotos(input) {
+  const files = Array.from(input?.files || []).filter((file) => file.type?.startsWith("image/")).slice(0, 4);
+  if (!files.length) return [];
+  const photos = [];
+  for (const file of files) {
+    const photo = await readImageAsDataUrl(file, 620, 11500);
+    if (!photo) throw new Error("No se pudo procesar una foto. Probá elegirla nuevamente o usar una imagen más chica.");
+    photos.push(photo);
+  }
+  return photos;
 }
 
 function uniqueSorted(values) {
@@ -1532,7 +1582,7 @@ function renderOperationalAlerts() {
       detail: staleLots.map((item) => `
         <div class="alert-line">
           <b>${displayLotName(item.lot)} ? ${item.lot.farm}</b>
-          <span>?ltimo monitoreo: ${item.lastDate ? dateShort(item.lastDate) : "sin registro"} ? ${number(item.lot.hectares, 2)} ha</span>
+          <span>Ultimo monitoreo: ${item.lastDate ? dateShort(item.lastDate) : "sin registro"} - ${number(item.lot.hectares, 2)} ha</span>
         </div>
       `).join("")
     }
@@ -1921,11 +1971,11 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
     <div class="map-detail-body">
       <div>
         <strong>${displayLotName(lot)}</strong>
-        <span>${lot.farm} ? ${number(lot.hectares, 2)} ha</span>
+        <span>${lot.farm} - ${number(lot.hectares, 2)} ha</span>
       </div>
       <div class="map-kpis">
         <div><b>${lot.crop || "-"}</b><span>Cultivo</span></div>
-        <div><b>${lot.variety || "-"}</b><span>Variedad/H?brido</span></div>
+        <div><b>${lot.variety || "-"}</b><span>Variedad/Hibrido</span></div>
         <div><b>${orders.length}</b><span>ordenes</span></div>
         <div><b>${pendingOrders}</b><span>Pendientes</span></div>
         <div><b>${money(totalSpentHa)}</b><span>Costo acum./ha</span></div>
@@ -1935,7 +1985,7 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
           <span>Campaña ${lot.campaign || "-"}</span>
           <span>Antecesor: ${lot.previousCrop || "-"}</span>
           <span>Ambiente: ${lot.environment || "-"}</span>
-          <span>${lastClosure ? `?ltimo cierre: ${lastClosure.campaign}, ${numberOptional(closureYield(lastClosure))} kg/ha, ${lastClosure.variety || "sin variedad"}, ${lastClosure.enso || "sin ENSO"}, margen ${moneyOptional(lastClosure.grossMargin)}` : "Sin cierre hist?rico cargado"}</span>
+          <span>${lastClosure ? `Ultimo cierre: ${lastClosure.campaign}, ${numberOptional(closureYield(lastClosure))} kg/ha, ${lastClosure.variety || "sin variedad"}, ${lastClosure.enso || "sin ENSO"}, margen ${moneyOptional(lastClosure.grossMargin)}` : "Sin cierre historico cargado"}</span>
         </div>
         ${lotOutline}
       </div>
@@ -1945,7 +1995,7 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
           <div class="map-row clickable-card" data-open-order-detail="${order.id}">
             <div>
               <b>${order.task}</b>
-              <span>${dateShort(order.date)} ? ${number(order.plannedHectares || 0, 2)} ha ? ${order.owner || "-"}</span>
+              <span>${dateShort(order.date)} - ${number(order.plannedHectares || 0, 2)} ha - ${order.owner || "-"}</span>
               <em>${formatOrderCost(order, orderCosts.get(order.id))}</em>
             </div>
             ${statusBadge(order.status)}
@@ -2536,8 +2586,9 @@ function renderMonitors() {
         <div class="monitor-list-row">
           ${monitorPhotoSource(monitor.photo) ? `<img class="monitor-thumb" src="${monitorPhotoSource(monitor.photo)}" alt="Foto de monitoreo" loading="lazy" />` : ""}
           <div>
-            <strong>${dateShort(monitor.date)} ? ${lotName(monitor.lotId)} ? ${monitor.crop || lotCrop(monitor.lotId) || "-"} ? ${lotVariety(monitor.lotId) || monitor.variety || "-"} ? ${monitor.cropStatus || "Sin estado"} ${syncBadge(monitor)}</strong>
-            <span>Malezas: ${monitor.weeds || "-"} ? Plagas/enfermedades: ${monitor.issues || "-"} ? Recomendaci?n: ${monitor.recommendation || "-"}</span>
+            <strong>${[dateShort(monitor.date), lotName(monitor.lotId), monitor.crop || lotCrop(monitor.lotId) || "-", lotVariety(monitor.lotId) || monitor.variety || "-", monitor.cropStatus || "Sin estado"].join(" - ")} ${syncBadge(monitor)}</strong>
+            <span>Malezas: ${monitor.weeds || "-"} - Plagas/enfermedades: ${monitor.issues || "-"} - Recomendacion: ${monitor.recommendation || "-"}</span>
+            ${renderMonitorPhotoThumbs(monitor.photo, "monitor-photo-strip")}
             <span class="item-actions">
               <button class="link-button" data-edit-monitor="${monitor.id}">Editar</button>
               <button class="link-button danger" data-delete-monitor="${monitor.id}">Eliminar</button>
@@ -2574,7 +2625,7 @@ function renderMonitorDetail(monitorId) {
 
   const monitor = data.monitors.find((item) => item.id === monitorId);
   if (!monitor) {
-    detail.innerHTML = `<div class="empty">Seleccion? un monitoreo para ver su ficha.</div>`;
+    detail.innerHTML = `<div class="empty">Selecciona un monitoreo para ver su ficha.</div>`;
     return;
   }
 
@@ -2583,16 +2634,16 @@ function renderMonitorDetail(monitorId) {
       <article><span>Fecha</span><strong>${dateShort(monitor.date)}</strong></article>
       <article><span>Lote</span><strong>${lotName(monitor.lotId)}</strong></article>
       <article><span>Cultivo</span><strong>${monitor.crop || lotCrop(monitor.lotId) || "-"}</strong></article>
-      <article><span>Variedad/H?brido</span><strong>${lotVariety(monitor.lotId) || monitor.variety || "-"}</strong></article>
+      <article><span>Variedad/Hibrido</span><strong>${lotVariety(monitor.lotId) || monitor.variety || "-"}</strong></article>
       <article><span>Estado</span><strong>${monitor.cropStatus || "-"}</strong></article>
-      <article><span>Sincronizaci?n</span><strong>${syncBadge(monitor) || "Base cargada"}</strong></article>
+      <article><span>Sincronizacion</span><strong>${syncBadge(monitor) || "Base cargada"}</strong></article>
     </div>
     <div class="detail-notes">
       <p><b>Malezas</b><span>${monitor.weeds || "-"}</span></p>
       <p><b>Plagas / enfermedades</b><span>${monitor.issues || "-"}</span></p>
-      <p><b>Recomendaci?n</b><span>${monitor.recommendation || "-"}</span></p>
+      <p><b>Recomendacion</b><span>${monitor.recommendation || "-"}</span></p>
     </div>
-    ${monitorPhotoSource(monitor.photo) ? `<img class="monitor-photo" src="${monitorPhotoSource(monitor.photo)}" alt="Foto de monitoreo" />` : ""}
+    ${renderMonitorPhotoThumbs(monitor.photo, "monitor-photo-gallery")}
     <div class="detail-actions">
       <button class="link-button" data-edit-monitor="${monitor.id}">Editar</button>
       <button class="link-button danger" data-delete-monitor="${monitor.id}">Eliminar</button>
@@ -2988,6 +3039,7 @@ function editMonitor(monitorId) {
   form.elements.issues.value = monitor.issues || "";
   form.elements.recommendation.value = monitor.recommendation || "";
   form.elements.photoFile.value = "";
+  updateMonitorPhotoPreview(monitorPhotoSources(monitor.photo));
   form.querySelector('button[type="submit"]').textContent = "Actualizar monitoreo";
   switchView("monitoreo");
   document.querySelector("#monitorFormBand")?.classList.remove("hidden-panel");
@@ -3496,11 +3548,14 @@ function renderProductDetail() {
         <span>${product.type || "-"} ? ${warehouses.join(", ") || "-"}</span>
       </div>
       <div class="application-detail-kpis">
-        <span>F?sico ${number(stock.physical, 2)} ${product.unit || ""}</span>
+        <span>Fisico ${number(stock.physical, 2)} ${product.unit || ""}</span>
         <span>Reservado ${number(stock.reserved, 2)} ${product.unit || ""}</span>
         <span>Disponible ${number(stock.available, 2)} ${product.unit || ""}</span>
       </div>
-      <button class="link-button" data-close-product-detail type="button">Volver al depósito</button>
+      <div class="row-actions">
+        <button class="link-button primary" data-edit-product-from-detail="${product.id}" type="button">Editar producto</button>
+        <button class="link-button" data-close-product-detail type="button">Volver al depósito</button>
+      </div>
     </div>
     <div class="deposit-detail-grid">
       <div>
@@ -3558,6 +3613,7 @@ function renderProductDetail() {
       </div>
     </div>
   `;
+  detail.querySelector("[data-edit-product-from-detail]")?.addEventListener("click", () => editProduct(product.id));
   detail.querySelector("[data-close-product-detail]")?.addEventListener("click", closeProductDetail);
   detail.querySelectorAll("[data-open-output-order]").forEach((row) => {
     row.addEventListener("click", () => {
@@ -3679,6 +3735,7 @@ function openMonitorFormForNew() {
   resetForm(form);
   form.elements.date.value = todayValue();
   if (form.elements.photoFile) form.elements.photoFile.value = "";
+  updateMonitorPhotoPreview([]);
   form.querySelector('button[type="submit"]').textContent = "Guardar monitoreo";
   applyLotDefaultCrop(form, true);
   applyLotDefaultVariety(form, true);
@@ -3700,6 +3757,7 @@ function cancelMonitorForm() {
   editingMonitorId = "";
   if (form) resetForm(form);
   if (form?.elements?.photoFile) form.elements.photoFile.value = "";
+  updateMonitorPhotoPreview([]);
   form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar monitoreo");
   document.querySelector("#monitorFormBand")?.classList.add("hidden-panel");
 }
@@ -4367,7 +4425,7 @@ function renderCampaignDetail() {
       <form id="campaignDetailForm" class="form-grid campaign-detail-form">
         <h3>${editing ? "Editar registro" : "Agregar registro"}</h3>
         <label>Cultivo <input name="crop" required value="${crop || ""}" placeholder="Soja 2da, Trigo, Maiz" /></label>
-        <label>Variedad/H?brido <input name="variety" value="${variety || ""}" placeholder="Ceibo, DM 46R18, DK..." /></label>
+        <label>Variedad/Hibrido <input name="variety" value="${variety || ""}" placeholder="Ceibo, DM 46R18, DK..." /></label>
         <label>ENSO
           <select name="enso">
             <option value="">Sin dato</option>
@@ -5031,6 +5089,14 @@ function bindForms() {
   monitorForm.elements.variety.addEventListener("input", () => {
     if (monitorForm.elements.variety.value !== monitorForm.dataset.defaultVariety) monitorForm.dataset.defaultVariety = "";
   });
+  monitorForm.elements.photoFile?.addEventListener("change", async () => {
+    try {
+      updateMonitorPhotoPreview(await readMonitorPhotos(monitorForm.elements.photoFile));
+    } catch (error) {
+      updateMonitorPhotoPreview([]);
+      showToast(error?.message || "No se pudieron previsualizar las fotos");
+    }
+  });
   document.querySelectorAll("[data-set-barbecho]").forEach((button) => {
     button.addEventListener("click", () => {
       const form = document.querySelector(`#${button.dataset.setBarbecho}`);
@@ -5055,18 +5121,14 @@ function bindForms() {
       const values = formData(form);
       delete values.photoFile;
       const existing = editingMonitorId ? data.monitors.find((monitor) => monitor.id === editingMonitorId) : null;
-      const photoFile = form.elements.photoFile.files?.[0];
-      const photo = await readImageAsDataUrl(photoFile);
-      if (photoFile && !photo) {
-        showToast("No se pudo procesar la foto. Prob? elegirla nuevamente.");
-        return;
-      }
+      const selectedPhotos = await readMonitorPhotos(form.elements.photoFile);
+      const photos = selectedPhotos.length ? selectedPhotos : monitorPhotoSources(existing?.photo);
       const record = {
         id: editingMonitorId || uid("mon"),
         ...values,
         crop: values.crop || lotCrop(values.lotId),
         variety: values.variety || lotVariety(values.lotId),
-        photo: photo || existing?.photo || ""
+        photo: serializeMonitorPhotos(photos)
       };
       if (editingMonitorId) {
         const index = data.monitors.findIndex((monitor) => monitor.id === editingMonitorId);
@@ -5082,6 +5144,7 @@ function bindForms() {
       saveData();
       resetForm(form);
       if (form.elements.photoFile) form.elements.photoFile.value = "";
+      updateMonitorPhotoPreview([]);
       document.querySelector("#monitorFormBand")?.classList.add("hidden-panel");
       renderAll();
       openMonitorDetail(record.id);
