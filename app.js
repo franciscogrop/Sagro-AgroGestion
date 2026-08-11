@@ -41,6 +41,7 @@ let syncQueue = loadSyncQueue();
 let syncConfig = loadSyncConfig();
 let syncRunning = false;
 let selectedMonitorId = "";
+let monitorPhotoDraft = [];
 let mapLayer = "satellite";
 let orderFilter = "Todas";
 let orderProductTextFilter = "";
@@ -320,8 +321,28 @@ async function syncOneItem(item) {
     if (!response.ok || result.ok === false) throw new Error(result.error || "No se pudo sincronizar");
     return result;
   } catch {
+    if (isLargeSyncItem(item)) {
+      await wait(1800);
+      const result = await pullRemoteData();
+      if (remoteContainsSyncItem(result.data || {}, item)) return { ok: true, synced: [{ syncId: item.syncId }] };
+      throw new Error("No se pudo confirmar el monitoreo con fotos. Queda pendiente.");
+    }
     return syncOneItemJsonp(item);
   }
+}
+
+function isLargeSyncItem(item) {
+  return item?.table === "monitors" && String(item.record?.photo || "").length > 12000;
+}
+
+function remoteContainsSyncItem(remote, item) {
+  const rows = Array.isArray(remote?.[item.table]) ? remote[item.table] : [];
+  const key = recordMergeKey(item.table, item.record);
+  return rows.some((row) => recordMergeKey(item.table, row) === key && (!item.record?.updatedAt || row.updatedAt === item.record.updatedAt || row.photo));
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function syncOneItemJsonp(item) {
@@ -1498,8 +1519,19 @@ function updateMonitorPhotoPreview(photos = []) {
   const target = document.querySelector("#monitorPhotoPreview");
   if (!target) return;
   target.innerHTML = photos.length
-    ? photos.map((src, index) => `<img class="monitor-photo-thumb" src="${src}" alt="Foto ${index + 1} seleccionada" loading="lazy" />`).join("")
+    ? photos.map((src, index) => `
+      <button class="monitor-photo-preview-item" type="button" data-remove-monitor-photo="${index}" title="Quitar foto">
+        <img class="monitor-photo-thumb" src="${src}" alt="Foto ${index + 1} seleccionada" loading="lazy" />
+        <span aria-hidden="true">x</span>
+      </button>
+    `).join("")
     : "";
+  target.querySelectorAll("[data-remove-monitor-photo]").forEach((button) => {
+    button.addEventListener("click", () => {
+      monitorPhotoDraft.splice(Number(button.dataset.removeMonitorPhoto), 1);
+      updateMonitorPhotoPreview(monitorPhotoDraft);
+    });
+  });
 }
 
 async function readMonitorPhotos(input) {
@@ -3043,7 +3075,8 @@ function editMonitor(monitorId) {
   form.elements.issues.value = monitor.issues || "";
   form.elements.recommendation.value = monitor.recommendation || "";
   form.elements.photoFile.value = "";
-  updateMonitorPhotoPreview(monitorPhotoSources(monitor.photo));
+  monitorPhotoDraft = monitorPhotoSources(monitor.photo);
+  updateMonitorPhotoPreview(monitorPhotoDraft);
   form.querySelector('button[type="submit"]').textContent = "Actualizar monitoreo";
   switchView("monitoreo");
   document.querySelector("#monitorFormBand")?.classList.remove("hidden-panel");
@@ -3739,6 +3772,7 @@ function openMonitorFormForNew() {
   resetForm(form);
   form.elements.date.value = todayValue();
   if (form.elements.photoFile) form.elements.photoFile.value = "";
+  monitorPhotoDraft = [];
   updateMonitorPhotoPreview([]);
   form.querySelector('button[type="submit"]').textContent = "Guardar monitoreo";
   applyLotDefaultCrop(form, true);
@@ -3761,6 +3795,7 @@ function cancelMonitorForm() {
   editingMonitorId = "";
   if (form) resetForm(form);
   if (form?.elements?.photoFile) form.elements.photoFile.value = "";
+  monitorPhotoDraft = [];
   updateMonitorPhotoPreview([]);
   form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar monitoreo");
   document.querySelector("#monitorFormBand")?.classList.add("hidden-panel");
@@ -5095,9 +5130,11 @@ function bindForms() {
   });
   monitorForm.elements.photoFile?.addEventListener("change", async () => {
     try {
-      updateMonitorPhotoPreview(await readMonitorPhotos(monitorForm.elements.photoFile));
+      const photos = await readMonitorPhotos(monitorForm.elements.photoFile);
+      monitorPhotoDraft = [...monitorPhotoDraft, ...photos].slice(0, 4);
+      updateMonitorPhotoPreview(monitorPhotoDraft);
+      monitorForm.elements.photoFile.value = "";
     } catch (error) {
-      updateMonitorPhotoPreview([]);
       showToast(error?.message || "No se pudieron previsualizar las fotos");
     }
   });
@@ -5126,7 +5163,7 @@ function bindForms() {
       delete values.photoFile;
       const existing = editingMonitorId ? data.monitors.find((monitor) => monitor.id === editingMonitorId) : null;
       const selectedPhotos = await readMonitorPhotos(form.elements.photoFile);
-      const photos = selectedPhotos.length ? selectedPhotos : monitorPhotoSources(existing?.photo);
+      const photos = [...monitorPhotoDraft, ...selectedPhotos].slice(0, 4);
       const record = {
         id: editingMonitorId || uid("mon"),
         ...values,
@@ -5148,6 +5185,7 @@ function bindForms() {
       saveData();
       resetForm(form);
       if (form.elements.photoFile) form.elements.photoFile.value = "";
+      monitorPhotoDraft = [];
       updateMonitorPhotoPreview([]);
       document.querySelector("#monitorFormBand")?.classList.add("hidden-panel");
       renderAll();

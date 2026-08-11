@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v106-monitoreo-fotos-2";
+const CACHE_NAME = "gestion-agro-cache-v107-monitoreo-fotos-sync";
 const ASSETS = [
   "./",
   "./index.html",
