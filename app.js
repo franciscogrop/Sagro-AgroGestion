@@ -307,6 +307,7 @@ async function syncPending() {
   } finally {
     syncRunning = false;
     renderSyncStatus();
+    renderAll();
   }
 }
 
