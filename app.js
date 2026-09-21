@@ -48,6 +48,7 @@ let orderProductTextFilter = "";
 let orderProductFilter = "Todos";
 let orderCropFilter = "Todos";
 let orderLotFilter = "Todos";
+let orderContractorFilter = "Todos";
 let selectedOrderProductKey = "";
 let highlightedApplicationId = "";
 let applicationDraftOrderId = "";
@@ -942,15 +943,18 @@ function clearOrderFilters() {
   orderProductTextFilter = "";
   orderCropFilter = "Todos";
   orderLotFilter = "Todos";
+  orderContractorFilter = "Todos";
   const status = document.querySelector("#orderStatusFilter");
   const crop = document.querySelector("#orderCropFilter");
   const lot = document.querySelector("#orderLotFilter");
   const product = document.querySelector("#orderProductFilter");
+  const contractor = document.querySelector("#orderContractorFilter");
   const productSearch = document.querySelector("#orderProductSearch");
   if (status) status.value = "Todas";
   if (crop) crop.value = "Todos";
   if (lot) lot.value = "Todos";
   if (product) product.value = "Todos";
+  if (contractor) contractor.value = "Todos";
   if (productSearch) productSearch.value = "";
   renderOrders();
 }
@@ -2287,6 +2291,7 @@ function populateOrderExtraFilters() {
   const cropSelect = document.querySelector("#orderCropFilter");
   const lotSelect = document.querySelector("#orderLotFilter");
   const productSelect = document.querySelector("#orderProductFilter");
+  const contractorSelect = document.querySelector("#orderContractorFilter");
   if (statusSelect) {
     const statuses = ["Todas", "Pendiente", "En curso", "Finalizada", "Cancelada"];
     statusSelect.innerHTML = statuses.map((status) => `<option value="${status}">${status === "Todas" ? "Todos" : status}</option>`).join("");
@@ -2317,6 +2322,18 @@ function populateOrderExtraFilters() {
     productSelect.value = selectedProduct || "Todos";
     orderProductFilter = productSelect.value;
   }
+  if (contractorSelect) {
+    const contractors = Array.from(data.orders.reduce((map, order) => {
+      const owner = String(order.owner || "").trim();
+      const key = normalizeName(owner);
+      if (key && !map.has(key)) map.set(key, owner);
+      return map;
+    }, new Map()).values()).sort(compareText);
+    contractorSelect.innerHTML = [`<option value="Todos">Todos</option>`, ...contractors.map((contractor) => `<option value="${contractor}">${contractor}</option>`)].join("");
+    const selectedContractor = contractors.find((contractor) => normalizeName(contractor) === normalizeName(orderContractorFilter));
+    contractorSelect.value = selectedContractor || "Todos";
+    orderContractorFilter = contractorSelect.value;
+  }
 }
 
 function orderMatchesMainFilters(order) {
@@ -2324,6 +2341,7 @@ function orderMatchesMainFilters(order) {
   if (orderCropFilter !== "Todos" && normalizeName(orderEffectiveCrop(order)) !== normalizeName(orderCropFilter)) return false;
   if (orderLotFilter !== "Todos" && order.lotId !== orderLotFilter) return false;
   if (orderProductFilter !== "Todos" && !orderHasProduct(order, orderProductFilter)) return false;
+  if (orderContractorFilter !== "Todos" && normalizeName(order.owner) !== normalizeName(orderContractorFilter)) return false;
   return true;
 }
 
@@ -2429,7 +2447,7 @@ function renderOrderProductSummary() {
       grouped.set(key, item);
     });
 
-  document.querySelector("#orderProductSummaryMeta").textContent = `Estado: ${orderFilter}. Cultivo: ${orderCropFilter}. Lote: ${orderLotFilter === "Todos" ? "Todos" : lotName(orderLotFilter)}. Producto: ${orderProductFilter}. Ordenes consideradas: ${orders.length}.`;
+  document.querySelector("#orderProductSummaryMeta").textContent = `Estado: ${orderFilter}. Cultivo: ${orderCropFilter}. Lote: ${orderLotFilter === "Todos" ? "Todos" : lotName(orderLotFilter)}. Producto: ${orderProductFilter}. Contratista: ${orderContractorFilter}. Ordenes consideradas: ${orders.length}.`;
   const rows = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base", numeric: true }));
   document.querySelector("#orderProductSummaryTable").innerHTML = rows.map((item) => `
     <tr class="clickable-row ${item.key === selectedOrderProductKey ? "selected" : ""}" data-order-product-key="${encodeURIComponent(item.key)}">
@@ -5405,6 +5423,10 @@ function bindOrderFilters() {
   });
   document.querySelector("#orderProductFilter")?.addEventListener("change", (event) => {
     orderProductFilter = event.target.value || "Todos";
+    renderOrders();
+  });
+  document.querySelector("#orderContractorFilter")?.addEventListener("change", (event) => {
+    orderContractorFilter = event.target.value || "Todos";
     renderOrders();
   });
 }
