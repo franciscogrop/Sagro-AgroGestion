@@ -2982,6 +2982,7 @@ function openApplicationFormFromOrder(orderId) {
   editingApplicationKey = "";
   highlightedApplicationId = "";
   applicationDraftOrderId = order.id;
+  configureApplicationSubmitButtons(false);
   switchView("aplicaciones");
   renderApplications();
   document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
@@ -3017,6 +3018,7 @@ function addProductToApplication(applicationId) {
   editingApplicationKey = "";
   highlightedApplicationId = "";
   applicationDraftOrderId = first.orderId || "";
+  configureApplicationSubmitButtons(false);
   switchView("aplicaciones");
   document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
 
@@ -3156,7 +3158,7 @@ function editApplication(key) {
   if (form.elements.totalQuantity) form.elements.totalQuantity.value = row.usedQuantity || "";
   form.elements.hectares.value = row.hectares || "";
   form.elements.laborCostHa.value = row.laborCostHa || 0;
-  form.querySelector('button[type="submit"]').textContent = "Actualizar aplicación";
+  configureApplicationSubmitButtons(true);
   switchView("aplicaciones");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -3783,6 +3785,15 @@ function openLotFormForNew() {
   form.elements.name?.focus();
 }
 
+function configureApplicationSubmitButtons(editing = false) {
+  const form = document.querySelector("#applicationForm");
+  if (!form) return;
+  const addButton = form.querySelector('[data-application-action="add"]');
+  const finishButton = form.querySelector('[data-application-action="finish"]');
+  if (addButton) addButton.textContent = editing ? "Actualizar producto" : "Agregar otro producto";
+  finishButton?.classList.toggle("hidden-panel", editing);
+}
+
 function openApplicationFormForNew() {
   const form = document.querySelector("#applicationForm");
   const band = document.querySelector("#applicationFormBand");
@@ -3793,7 +3804,7 @@ function openApplicationFormForNew() {
   resetForm(form);
   form.elements.date.value = todayValue();
   form.elements.laborCostHa.value = 0;
-  form.querySelector('button[type="submit"]').textContent = "Guardar aplicación";
+  configureApplicationSubmitButtons(false);
   toggleManualProductInput(form);
   band.classList.remove("hidden-panel");
   band.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3906,7 +3917,7 @@ function cancelApplicationForm() {
   editingApplicationKey = "";
   applicationDraftOrderId = "";
   if (form) resetForm(form);
-  form?.querySelector('button[type="submit"]') && (form.querySelector('button[type="submit"]').textContent = "Guardar aplicación");
+  configureApplicationSubmitButtons(false);
   document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
   renderApplications();
 }
@@ -5337,6 +5348,7 @@ function bindForms() {
   applicationForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const wasEditingApplication = Boolean(editingApplicationKey);
+    const submitAction = wasEditingApplication ? "finish" : (event.submitter?.dataset.applicationAction || "finish");
     const values = formData(event.currentTarget);
     const product = values.productId === "__manual__"
       ? getOrCreateManualProduct(values.manualProductName, values.manualProductUnit, values.lotId)
@@ -5392,24 +5404,47 @@ function bindForms() {
         queueSync("applications", data.applications[index], "update");
       }
       editingApplicationKey = "";
-      event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar aplicación";
+      configureApplicationSubmitButtons(false);
     } else {
       data.applications.push(record);
       queueSync("applications", record);
     }
     saveData();
-    resetForm(event.currentTarget);
-    highlightedApplicationId = applicationId;
-    applicationDraftOrderId = "";
-    document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
-    renderAll();
-    switchView("aplicaciones");
-    highlightedApplicationId = applicationId;
-    renderApplications();
-    window.setTimeout(() => {
-      document.querySelector("#applicationDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
-    showToast(wasEditingApplication ? "Aplicación actualizada" : "Aplicación guardada y stock actualizado");
+    if (submitAction === "add") {
+      const kept = {
+        date: values.date,
+        lotId: values.lotId,
+        orderId: values.orderId,
+        id: applicationId,
+        hectares: values.hectares
+      };
+      resetForm(event.currentTarget);
+      event.currentTarget.elements.date.value = kept.date;
+      event.currentTarget.elements.lotId.value = kept.lotId;
+      event.currentTarget.elements.orderId.value = kept.orderId;
+      event.currentTarget.elements.id.value = kept.id;
+      event.currentTarget.elements.hectares.value = kept.hectares;
+      event.currentTarget.elements.laborCostHa.value = "0";
+      toggleManualProductInput(event.currentTarget);
+      configureApplicationSubmitButtons(false);
+      renderAll();
+      event.currentTarget.elements.productId.focus();
+      showToast("Producto agregado. Podés cargar otro.");
+    } else {
+      resetForm(event.currentTarget);
+      highlightedApplicationId = applicationId;
+      applicationDraftOrderId = "";
+      document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
+      configureApplicationSubmitButtons(false);
+      renderAll();
+      switchView("aplicaciones");
+      highlightedApplicationId = applicationId;
+      renderApplications();
+      window.setTimeout(() => {
+        document.querySelector("#applicationDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 0);
+      showToast(wasEditingApplication ? "Producto actualizado" : "Aplicación guardada y stock actualizado");
+    }
   });
 
   document.querySelector("#closureForm").addEventListener("submit", (event) => {

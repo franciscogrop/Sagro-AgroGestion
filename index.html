@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260921-collapsed-forms-execution-date" />
+    <link rel="stylesheet" href="styles.css?v=20260922-application-actions" />
   </head>
   <body>
     <div class="app-shell">
@@ -326,7 +326,8 @@
               <label>Hectáreas <input name="hectares" type="text" inputmode="decimal" required /></label>
               <label>Costo labor/ha <input name="laborCostHa" type="text" inputmode="decimal" value="0" /></label>
               <div class="form-actions">
-                <button type="submit">Guardar aplicación</button>
+                <button type="submit" data-application-action="add">Agregar otro producto</button>
+                <button type="submit" data-application-action="finish">Guardar aplicación</button>
                 <button class="link-button" id="cancelApplicationForm" type="button">Cancelar</button>
               </div>
             </form>
@@ -651,6 +652,6 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=20260921-collapsed-forms-execution-date"></script>
+    <script src="app.js?v=20260922-application-actions"></script>
   </body>
 </html>
