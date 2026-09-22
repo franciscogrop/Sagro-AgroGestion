@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260808-editar-producto" />
+    <link rel="stylesheet" href="styles.css?v=20260921-collapsed-forms-execution-date" />
   </head>
   <body>
     <div class="app-shell">
@@ -96,7 +96,10 @@
           <section class="panel">
             <div class="panel-header">
               <h2>Lotes cargados</h2>
-              <span class="panel-note">Hacé clic en un lote para ver su ficha</span>
+              <div class="panel-actions">
+                <span class="panel-note">Hacé clic en un lote para ver su ficha</span>
+                <button class="link-button primary-action" id="newLotButton" type="button">Nuevo lote</button>
+              </div>
             </div>
             <div class="table-wrap">
               <table class="lots-table">
@@ -117,7 +120,7 @@
             </div>
           </section>
 
-          <section class="form-band compact-form">
+          <section class="form-band compact-form hidden-panel" id="lotFormBand">
             <h2 id="lotFormTitle">Nuevo lote</h2>
             <form id="lotForm" class="form-grid">
               <label>Nombre <input name="name" required placeholder="Lote 1" /></label>
@@ -128,7 +131,7 @@
               <label>Variedad/Híbrido <input name="variety" placeholder="DM 46i20, DK 72-10" /></label>
               <label>Antecesor <input name="previousCrop" placeholder="Maíz" /></label>
               <button type="submit">Guardar lote</button>
-              <button class="link-button" id="cancelLotEdit" type="button" hidden>Cancelar edición</button>
+              <button class="link-button" id="cancelLotEdit" type="button">Cancelar</button>
             </form>
           </section>
 
@@ -237,7 +240,7 @@
             <div class="panel-header">
               <h2>Órdenes registradas</h2>
               <div class="order-filters">
-                <button class="link-button" id="newOrderButton" type="button">Nueva orden</button>
+                <button class="link-button primary-action" id="newOrderButton" type="button">Nueva orden</button>
                 <label>Estado <select id="orderStatusFilter"></select></label>
                 <label>Cultivo <select id="orderCropFilter"></select></label>
                 <label>Lote <select id="orderLotFilter"></select></label>
@@ -305,7 +308,7 @@
         </section>
 
         <section class="view" id="aplicaciones">
-          <section class="form-band" id="applicationFormBand">
+          <section class="form-band hidden-panel" id="applicationFormBand">
             <div class="form-band-header">
               <h2>Nueva aplicación</h2>
               <button class="link-button" id="backToOrdersFromApplicationForm" type="button">Volver a órdenes</button>
@@ -332,6 +335,7 @@
             <div class="panel-header">
               <h2>Aplicaciones y costos</h2>
               <div class="panel-actions">
+                <button class="link-button primary-action" id="newApplicationButton" type="button">Nueva aplicación</button>
                 <button class="link-button" id="backToOrders" type="button">Volver a órdenes</button>
                 <button class="link-button" id="showAllApplications" type="button">Ver todas</button>
               </div>
@@ -388,7 +392,7 @@
             <div class="panel-header">
               <h2>Productos en depósito</h2>
               <div class="deposit-filters">
-                <button class="link-button" id="newDepositButton" type="button">Nuevo ingreso</button>
+                <button class="link-button primary-action" id="newDepositButton" type="button">Nuevo ingreso</button>
                 <label>Producto <input id="productNameFilter" list="productCatalogList" placeholder="Todos" /></label>
                 <label>Remito <input id="productReceiptFilter" list="receiptCatalogList" placeholder="Todos" /></label>
                 <label>Desde <input id="productReceiptDateFrom" type="date" /></label>
@@ -572,7 +576,7 @@
         </section>
 
         <section class="view" id="cierre">
-          <section class="form-band">
+          <section class="form-band hidden-panel" id="closureFormBand">
             <h2>Cerrar campaña</h2>
             <form id="closureForm" class="form-grid">
               <label>Lote <select name="lotId" required></select></label>
@@ -591,15 +595,21 @@
               <label>Kg cosechados <input name="kgHarvested" type="text" inputmode="decimal" required /></label>
               <label>Precio por tonelada <input name="priceTon" type="text" inputmode="decimal" required /></label>
               <label>Otros costos <input name="otherCosts" type="text" inputmode="decimal" value="0" /></label>
-              <button type="submit">Guardar cierre</button>
+              <div class="form-actions">
+                <button type="submit">Guardar cierre</button>
+                <button class="link-button" id="cancelClosureForm" type="button">Cancelar</button>
+              </div>
             </form>
           </section>
           <section class="panel">
             <div class="panel-header">
               <h2>Rendimientos históricos</h2>
-              <label class="inline-select">Cultivo
-                <select id="closureCropFilter"></select>
-              </label>
+              <div class="panel-actions">
+                <button class="link-button primary-action" id="newClosureButton" type="button">Nuevo cierre</button>
+                <label class="inline-select">Cultivo
+                  <select id="closureCropFilter"></select>
+                </label>
+              </div>
             </div>
             <div class="table-wrap">
               <table>
@@ -629,6 +639,18 @@
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
     <script src="data.js?v=20260609-auditoria-stock"></script>
-    <script src="app.js?v=20260921-order-contractor-filter"></script>
+    <dialog class="completion-dialog" id="orderCompletionDialog">
+      <form id="orderCompletionForm">
+        <h2>Finalizar orden</h2>
+        <p id="orderCompletionDescription"></p>
+        <label>Fecha de ejecución <input id="orderCompletionDate" type="date" required /></label>
+        <div class="form-actions">
+          <button class="link-button" id="cancelOrderCompletion" type="button">Cancelar</button>
+          <button type="submit">Finalizar orden</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="app.js?v=20260921-collapsed-forms-execution-date"></script>
   </body>
 </html>

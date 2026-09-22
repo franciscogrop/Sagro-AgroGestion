@@ -49,6 +49,7 @@ let orderProductFilter = "Todos";
 let orderCropFilter = "Todos";
 let orderLotFilter = "Todos";
 let orderContractorFilter = "Todos";
+let pendingCompletionOrderId = "";
 let selectedOrderProductKey = "";
 let highlightedApplicationId = "";
 let applicationDraftOrderId = "";
@@ -1684,7 +1685,7 @@ function renderLots() {
   const formTitle = document.querySelector("#lotFormTitle");
   const cancelButton = document.querySelector("#cancelLotEdit");
   if (formTitle) formTitle.textContent = editingLotId ? "Editar lote" : "Nuevo lote";
-  if (cancelButton) cancelButton.hidden = !editingLotId;
+  if (cancelButton) cancelButton.hidden = false;
 
   document.querySelector("#lotsTable").innerHTML = data.lots
     .map((lot) => {
@@ -1737,6 +1738,7 @@ function editLot(lotId) {
   form.elements.variety.value = lot.variety || "";
   form.elements.previousCrop.value = lot.previousCrop || "";
   form.querySelector('button[type="submit"]').textContent = "Guardar cambios";
+  document.querySelector("#lotFormBand")?.classList.remove("hidden-panel");
   renderLots();
   form.closest(".form-band")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -1747,6 +1749,7 @@ function cancelLotEdit() {
   form?.reset();
   if (form?.elements?.campaign) form.elements.campaign.value = "2025/26";
   if (form) form.querySelector('button[type="submit"]').textContent = "Guardar lote";
+  document.querySelector("#lotFormBand")?.classList.add("hidden-panel");
   renderLots();
 }
 
@@ -2591,6 +2594,7 @@ function renderOrderDetail(orderId) {
       </div>
       <div class="map-info-lines">
         <span>Número de orden: ${orderShortLabel(order)}</span>
+        <span>Fecha de ejecución: ${order.completionDate ? dateShort(order.completionDate) : "-"}</span>
         <span>Cultivo: ${order.crop || lotCrop(order.lotId) || "-"}</span>
         <span>Variedad/Híbrido: ${order.variety || lotVariety(order.lotId) || "-"}</span>
         <span>Costo labor/ha: ${money(order.laborCostHa || 0)}</span>
@@ -2710,7 +2714,7 @@ function renderMonitorDetail(monitorId) {
 }
 
 function renderApplications() {
-  document.querySelector("#applicationFormBand")?.classList.toggle("hidden-panel", Boolean(highlightedApplicationId));
+  if (highlightedApplicationId) document.querySelector("#applicationFormBand")?.classList.add("hidden-panel");
   const grouped = Array.from(data.applications.reduce((map, row) => {
     if (!row.id) return map;
     const item = map.get(row.id) || {
@@ -2980,6 +2984,7 @@ function openApplicationFormFromOrder(orderId) {
   applicationDraftOrderId = order.id;
   switchView("aplicaciones");
   renderApplications();
+  document.querySelector("#applicationFormBand")?.classList.remove("hidden-panel");
 
   form.elements.date.value = order.date || todayValue();
   form.elements.lotId.value = order.lotId || "";
@@ -3055,12 +3060,32 @@ function editOrder(orderId) {
 function finishOrder(orderId) {
   const order = orderById(orderId);
   if (!order) return;
+  requestOrderCompletionDate(orderId);
+}
+
+function requestOrderCompletionDate(orderId) {
+  const order = orderById(orderId);
+  const dialog = document.querySelector("#orderCompletionDialog");
+  const dateInput = document.querySelector("#orderCompletionDate");
+  if (!order || !dialog || !dateInput) return;
+  pendingCompletionOrderId = orderId;
+  dateInput.value = order.completionDate || todayValue();
+  const description = document.querySelector("#orderCompletionDescription");
+  if (description) description.textContent = `${orderShortLabel(order)} - ${lotName(order.lotId)} - ${order.task}`;
+  dialog.showModal();
+  dateInput.focus();
+}
+
+function completeOrder(orderId, completionDate) {
+  const order = orderById(orderId);
+  if (!order || !completionDate) return;
   order.status = "Finalizada";
-  order.completionDate = todayValue();
+  order.completionDate = completionDate;
   queueSync("orders", order, "update");
   saveData();
   renderAll();
-  showToast("Orden finalizada");
+  if (selectedOrderId === orderId && document.querySelector("#ficha-orden")?.classList.contains("active")) renderOrderDetail(orderId);
+  showToast(`Orden finalizada el ${dateShort(completionDate)}`);
 }
 
 function deleteOrder(orderId) {
@@ -3742,6 +3767,62 @@ function formatUnitTotals(map) {
   const entries = Array.from(map.entries()).filter(([, value]) => Math.abs(value) >= 0.005);
   if (!entries.length) return "-";
   return entries.map(([unit, value]) => `${number(value, 2)} ${unit}`.trim()).join(" ? ");
+}
+
+function openLotFormForNew() {
+  const form = document.querySelector("#lotForm");
+  const band = document.querySelector("#lotFormBand");
+  if (!form || !band) return;
+  editingLotId = "";
+  resetForm(form);
+  form.elements.campaign.value = activeCampaignValue();
+  form.querySelector('button[type="submit"]').textContent = "Guardar lote";
+  renderLots();
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.name?.focus();
+}
+
+function openApplicationFormForNew() {
+  const form = document.querySelector("#applicationForm");
+  const band = document.querySelector("#applicationFormBand");
+  if (!form || !band) return;
+  editingApplicationKey = "";
+  applicationDraftOrderId = "";
+  highlightedApplicationId = "";
+  resetForm(form);
+  form.elements.date.value = todayValue();
+  form.elements.laborCostHa.value = 0;
+  form.querySelector('button[type="submit"]').textContent = "Guardar aplicación";
+  toggleManualProductInput(form);
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.lotId?.focus();
+}
+
+function openClosureFormForNew() {
+  const form = document.querySelector("#closureForm");
+  const band = document.querySelector("#closureFormBand");
+  if (!form || !band) return;
+  editingClosureFormId = "";
+  closureReturnView = "";
+  resetForm(form);
+  applyClosureDefaults(form, true);
+  form.querySelector('button[type="submit"]').textContent = "Guardar cierre";
+  band.classList.remove("hidden-panel");
+  band.scrollIntoView({ behavior: "smooth", block: "start" });
+  form.elements.lotId?.focus();
+}
+
+function cancelClosureForm() {
+  editingClosureFormId = "";
+  closureReturnView = "";
+  const form = document.querySelector("#closureForm");
+  if (form) {
+    resetForm(form);
+    applyClosureDefaults(form, true);
+  }
+  document.querySelector("#closureFormBand")?.classList.add("hidden-panel");
 }
 
 function openProductFormForNew() {
@@ -4599,6 +4680,7 @@ function editClosureInMainForm(id, returnView = "ficha-campana") {
   form.elements.otherCosts.value = record.otherCosts || 0;
   form.querySelector('button[type="submit"]').textContent = "Actualizar cierre";
   switchView("cierre");
+  document.querySelector("#closureFormBand")?.classList.remove("hidden-panel");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
   showToast("Editando cierre");
 }
@@ -4974,6 +5056,7 @@ function resetForm(form) {
 }
 
 function bindForms() {
+  document.querySelector("#newLotButton")?.addEventListener("click", openLotFormForNew);
   document.querySelector("#lotForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -4994,6 +5077,7 @@ function bindForms() {
     saveData();
     resetForm(event.currentTarget);
     renderAll();
+    document.querySelector("#lotFormBand")?.classList.add("hidden-panel");
     showToast("Lote guardado");
   });
 
@@ -5063,6 +5147,18 @@ function bindForms() {
   const orderForm = document.querySelector("#orderForm");
   document.querySelector("#newOrderButton")?.addEventListener("click", openOrderFormForNew);
   document.querySelector("#cancelOrderForm")?.addEventListener("click", cancelOrderForm);
+  document.querySelector("#orderCompletionForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const completionDate = document.querySelector("#orderCompletionDate")?.value || "";
+    if (!pendingCompletionOrderId || !completionDate) return;
+    completeOrder(pendingCompletionOrderId, completionDate);
+    pendingCompletionOrderId = "";
+    document.querySelector("#orderCompletionDialog")?.close();
+  });
+  document.querySelector("#cancelOrderCompletion")?.addEventListener("click", () => {
+    pendingCompletionOrderId = "";
+    document.querySelector("#orderCompletionDialog")?.close();
+  });
   orderForm.elements.lotId.addEventListener("change", () => {
     applyOrderLotDefaultHectares();
     applyLotDefaultCrop(orderForm);
@@ -5221,9 +5317,12 @@ function bindForms() {
   });
 
   const closureForm = document.querySelector("#closureForm");
+  document.querySelector("#newClosureButton")?.addEventListener("click", openClosureFormForNew);
+  document.querySelector("#cancelClosureForm")?.addEventListener("click", cancelClosureForm);
   closureForm.elements.lotId.addEventListener("change", () => applyClosureDefaults(closureForm, true));
 
   const applicationForm = document.querySelector("#applicationForm");
+  document.querySelector("#newApplicationButton")?.addEventListener("click", openApplicationFormForNew);
   document.querySelector("#cancelApplicationForm")?.addEventListener("click", cancelApplicationForm);
   applicationForm.elements.productId.addEventListener("change", (event) => {
     toggleManualProductInput(event.currentTarget.form);
@@ -5359,6 +5458,7 @@ function bindForms() {
     resetForm(event.currentTarget);
     applyClosureDefaults(event.currentTarget, true);
     renderAll();
+    document.querySelector("#closureFormBand")?.classList.add("hidden-panel");
     if (returnView) {
       if (returnView === "ficha-campana") renderCampaignDetail();
       switchView(returnView);
