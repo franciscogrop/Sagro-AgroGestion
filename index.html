@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20260922-application-actions" />
+    <link rel="stylesheet" href="styles.css?v=20261111-clave-sync" />
   </head>
   <body>
     <div class="app-shell">
@@ -83,8 +83,11 @@
               <label>URL de Apps Script
                 <input id="syncApiUrl" type="url" placeholder="https://script.google.com/macros/s/..." />
               </label>
+              <label>Clave de acceso
+                <input id="syncApiKey" type="password" autocomplete="off" placeholder="Clave que te pasaron para sincronizar" />
+              </label>
               <div class="sync-actions">
-                <button class="link-button" id="saveSyncConfig" type="button">Guardar URL</button>
+                <button class="link-button" id="saveSyncConfig" type="button">Guardar</button>
                 <button class="link-button primary" id="syncNow" type="button">Sincronizar ahora</button>
               </div>
               <div id="syncStatus" class="sync-status"></div>
@@ -639,7 +642,7 @@
     <datalist id="taskList"></datalist>
     <datalist id="productCatalogList"></datalist>
     <datalist id="receiptCatalogList"></datalist>
-    <script src="data.js?v=20260609-auditoria-stock"></script>
+    <script src="data.js?v=20261111-sin-datos"></script>
     <dialog class="completion-dialog" id="orderCompletionDialog">
       <form id="orderCompletionForm">
         <h2>Finalizar orden</h2>
@@ -652,6 +655,6 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=20260922-application-actions"></script>
+    <script src="app.js?v=20261111-clave-sync"></script>
   </body>
 </html>

@@ -145,9 +145,9 @@ function saveSyncQueue() {
 function loadSyncConfig() {
   try {
     const saved = JSON.parse(safeStorageGet(syncConfigKey) || "{}");
-    return { apiUrl: saved.apiUrl || defaultSyncApiUrl };
+    return { apiUrl: saved.apiUrl || defaultSyncApiUrl, apiKey: saved.apiKey || "" };
   } catch {
-    return { apiUrl: defaultSyncApiUrl };
+    return { apiUrl: defaultSyncApiUrl, apiKey: "" };
   }
 }
 
@@ -204,7 +204,7 @@ function enrichRecordForSync(record) {
 
 function syncMessage() {
   const pending = syncQueue.length;
-  const urlState = syncConfig.apiUrl ? "URL configurada" : "falta pegar la URL de Apps Script";
+  const urlState = syncConfig.apiUrl ? (syncConfig.apiKey ? "URL y clave configuradas" : "URL configurada, falta la clave de acceso") : "falta pegar la URL de Apps Script";
   const connection = navigator.onLine === false ? "sin conexion" : "con conexion";
   if (!pending) return `Todo sincronizado (${urlState}, ${connection}).`;
   return `${pending} carga${pending === 1 ? "" : "s"} pendiente${pending === 1 ? "" : "s"} (${urlState}, ${connection}).`;
@@ -318,7 +318,7 @@ async function syncOneItem(item) {
     const response = await fetch(syncConfig.apiUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ source: "gestion-agro", items: [item] })
+      body: JSON.stringify({ source: "gestion-agro", key: syncConfig.apiKey || "", items: [item] })
     });
     const result = await response.json();
     if (!response.ok || result.ok === false) throw new Error(result.error || "No se pudo sincronizar");
@@ -351,7 +351,7 @@ function wait(ms) {
 function syncOneItemJsonp(item) {
   return new Promise((resolve, reject) => {
     const callbackName = `gestionAgroSync_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    const payload = encodeURIComponent(JSON.stringify({ source: "gestion-agro", items: [item] }));
+    const payload = encodeURIComponent(JSON.stringify({ source: "gestion-agro", key: syncConfig.apiKey || "", items: [item] }));
     const separator = syncConfig.apiUrl.includes("?") ? "&" : "?";
     const script = document.createElement("script");
     const timeout = window.setTimeout(() => {
@@ -417,7 +417,7 @@ function pullRemoteData() {
       cleanup();
       reject(new Error("No se pudo conectar con Apps Script"));
     };
-    script.src = `${syncConfig.apiUrl}${separator}action=read&callback=${callbackName}&ts=${Date.now()}`;
+    script.src = `${syncConfig.apiUrl}${separator}action=read&key=${encodeURIComponent(syncConfig.apiKey || "")}&callback=${callbackName}&ts=${Date.now()}`;
     document.body.appendChild(script);
   });
 }
@@ -5504,16 +5504,20 @@ function bindForms() {
 
 function bindSyncTools() {
   const input = document.querySelector("#syncApiUrl");
+  const keyInput = document.querySelector("#syncApiKey");
   const saveButton = document.querySelector("#saveSyncConfig");
   const syncButton = document.querySelector("#syncNow");
   const globalSyncButton = document.querySelector("#globalSyncNow");
 
   if (input) input.value = syncConfig.apiUrl || "";
+  if (keyInput) keyInput.value = syncConfig.apiKey || "";
   saveButton?.addEventListener("click", () => {
     syncConfig.apiUrl = input.value.trim();
+    // La clave de acceso queda solo en este dispositivo; nunca se escribe en el código.
+    if (keyInput) syncConfig.apiKey = keyInput.value.trim();
     saveSyncConfig();
     renderSyncStatus();
-    showToast(syncConfig.apiUrl ? "URL guardada" : "URL borrada");
+    showToast(syncConfig.apiUrl ? "Configuración guardada" : "URL borrada");
     syncPending();
   });
   syncButton?.addEventListener("click", () => syncPending());

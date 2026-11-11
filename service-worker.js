@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v111-application-actions";
+const CACHE_NAME = "gestion-agro-cache-v112-clave-sync";
 const ASSETS = [
   "./",
   "./index.html",
