@@ -121,6 +121,7 @@ function loadData() {
 }
 
 function saveData() {
+  averageCostVersion += 1;
   safeStorageSet(storageKey, JSON.stringify(data));
 }
 
@@ -423,6 +424,7 @@ function pullRemoteData() {
 }
 
 function mergeRemoteData(remote) {
+  averageCostVersion += 1;
   const tables = ["lots", "products", "orders", "monitors", "applications", "closures"];
   tables.forEach((table) => {
     const rows = Array.isArray(remote[table]) ? remote[table] : [];
@@ -637,8 +639,55 @@ function datedReceiptEntries(product) {
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
 
+// Precio promedio ponderado móvil: cada compra se promedia con lo que queda en stock (todas las compras del
+// producto, en todos los depósitos); los consumos (órdenes finalizadas) no cambian el promedio.
+// Reemplaza al "precio de la última compra", que valuaba todo lo aplicado al último precio aunque se usara stock viejo.
+let averageCostCache = { key: "", map: new Map() };
+function averageCostCacheKey() {
+  return `${data.products.length}|${data.applications.length}|${data.orders.length}|${averageCostVersion}`;
+}
+let averageCostVersion = 0;
+
+function weightedAverageCost(product, date) {
+  const cacheKey = averageCostCacheKey();
+  if (averageCostCache.key !== cacheKey) averageCostCache = { key: cacheKey, map: new Map() };
+  const memoKey = `${productStockKey(product)}|${date || ""}`;
+  if (averageCostCache.map.has(memoKey)) return averageCostCache.map.get(memoKey);
+  const group = productGroupProducts(product);
+  const receipts = group.flatMap((item) => {
+    const entries = receiptEntriesForProduct(item).filter((entry) => entry.detailed && entry.date);
+    if (entries.length) return entries.map((entry) => ({ type: "in", date: entry.date, quantity: parseDecimal(entry.quantity), cost: parseDecimal(entry.unitCost) }));
+    const opening = parseDecimal(item.quantity);
+    return opening > 0 ? [{ type: "in", date: "", quantity: opening, cost: parseDecimal(item.unitCost) }] : [];
+  });
+  let result = null;
+  if (receipts.length) {
+    const consumptions = uniqueApplicationRows()
+      .filter((application) => productMatchesApplication(product, application))
+      .filter((application) => {
+        const order = orderById(application.orderId);
+        return order ? order.status === "Finalizada" : !!application.id;
+      })
+      .map((application) => ({ type: "out", date: applicationPricingDate(application), quantity: applicationQuantity(application) }));
+    const events = [...receipts, ...consumptions].sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.type === "in" ? -1 : 1) - (b.type === "in" ? -1 : 1));
+    let onHand = 0;
+    let average = null;
+    for (const event of events) {
+      if (date && event.date > date) break;
+      if (event.type === "out") { onHand -= event.quantity; continue; }
+      average = average == null || onHand <= 0 ? event.cost : (onHand * average + event.quantity * event.cost) / (onHand + event.quantity);
+      onHand += event.quantity;
+    }
+    result = average;
+  }
+  averageCostCache.map.set(memoKey, result);
+  return result;
+}
+
 function unitCostForProductDate(product, date, fallbackCost = "") {
   if (!product) return parseDecimal(fallbackCost);
+  const weighted = weightedAverageCost(product, date);
+  if (weighted != null) return weighted;
   const dated = datedReceiptEntries(product);
   const eligible = dated.filter((entry) => !date || entry.date <= date);
   if (eligible.length) return eligible[eligible.length - 1].parsedUnitCost;
