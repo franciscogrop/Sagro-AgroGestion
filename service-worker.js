@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v113-promedio-ponderado";
+const CACHE_NAME = "gestion-agro-cache-v114-comprobantes";
 const ASSETS = [
   "./",
   "./index.html",

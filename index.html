@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20261111-clave-sync" />
+    <link rel="stylesheet" href="styles.css?v=20261112-comprobantes" />
   </head>
   <body>
     <div class="app-shell">
@@ -233,6 +233,7 @@
                 </select>
               </label>
               <label>Observaciones <input name="notes" placeholder="Detalle breve" /></label>
+              <label>Aporte de socio <input name="partner" list="partnerCatalogList" placeholder="Vacío = lo paga SAGRO" /></label>
               <div class="form-actions">
                 <button type="submit">Guardar orden</button>
                 <button class="link-button" id="cancelOrderForm" type="button">Cancelar</button>
@@ -655,6 +656,6 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=20261111-promedio-ponderado"></script>
+    <script src="app.js?v=20261112-comprobantes"></script>
   </body>
 </html>

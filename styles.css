@@ -2610,3 +2610,8 @@ td {
     gap: 8px;
   }
 }
+
+/* Comprobantes de compra en el ingreso al depósito */
+.voucher-header, .voucher-footer { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; grid-column: 1 / -1; }
+.voucher-totals { grid-column: 1 / -1; padding: 8px 10px; border-radius: 8px; background: #f2f6ef; }
+#voucherConversion { margin-top: 12px; }

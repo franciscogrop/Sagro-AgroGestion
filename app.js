@@ -116,6 +116,7 @@ function loadData() {
   const base = window.APP_DATA ? { ...structuredClone(starterData), ...structuredClone(window.APP_DATA) } : structuredClone(starterData);
   const loaded = saved ? { ...base, ...JSON.parse(saved) } : base;
   loaded.applications = uniqueApplicationRows(loaded.applications || []);
+  loaded.vouchers = Array.isArray(loaded.vouchers) ? loaded.vouchers.map(parseVoucherRecord) : [];
   normalizeCampaignRecords(loaded);
   return loaded;
 }
@@ -256,7 +257,8 @@ function markSynced(syncId) {
     orders: data.orders,
     monitors: data.monitors,
     applications: data.applications,
-    closures: data.closures
+    closures: data.closures,
+    vouchers: data.vouchers || []
   };
   const collection = collectionByTable[queueItem.table] || [];
   const record = collection.find((item) => item._syncId === syncId || item.id === queueItem.record?.id);
@@ -425,7 +427,8 @@ function pullRemoteData() {
 
 function mergeRemoteData(remote) {
   averageCostVersion += 1;
-  const tables = ["lots", "products", "orders", "monitors", "applications", "closures"];
+  const tables = ["lots", "products", "orders", "monitors", "applications", "closures", "vouchers"];
+  if (!Array.isArray(remote.vouchers)) tables.pop();
   tables.forEach((table) => {
     const rows = Array.isArray(remote[table]) ? remote[table] : [];
     const current = Array.isArray(data[table]) ? data[table] : [];
@@ -447,7 +450,7 @@ function mergeRemoteData(remote) {
       if (item._syncStatus === "pending" || item._syncStatus === "delete-pending") return true;
       return remoteKeys.has(recordMergeKey(table, item));
     });
-    data[table] = table === "applications" ? uniqueApplicationRows(filtered) : filtered;
+    data[table] = table === "applications" ? uniqueApplicationRows(filtered) : table === "vouchers" ? filtered.map(parseVoucherRecord) : filtered;
   });
   normalizeCampaignRecords(data);
   data.products.forEach(recalculateApplicationsForProduct);
@@ -568,8 +571,8 @@ function receiptEntriesForProduct(product) {
     const value = line.trim();
     if (!value) return [];
     if (value.includes("|")) {
-      const [number, date, quantity, unitCost, supplier] = value.split("|");
-      return [{ number, date, quantity, unitCost, supplier: supplier || product?.supplier || "", detailed: true }];
+      const [number, date, quantity, unitCost, supplier, voucherId] = value.split("|");
+      return [{ number, date, quantity, unitCost, supplier: supplier || product?.supplier || "", voucherId: voucherId || "", detailed: true }];
     }
     return value.split(",").map((number) => ({ number: number.trim(), supplier: product?.supplier || "", detailed: false })).filter((entry) => entry.number);
   });
@@ -739,9 +742,9 @@ function receiptQuantityTotal(product) {
     .reduce((sum, entry) => sum + parseDecimal(entry.quantity), 0);
 }
 
-function appendReceiptEntry(current, receiptNumber, receiptDate, quantity, unitCost, supplier = "") {
+function appendReceiptEntry(current, receiptNumber, receiptDate, quantity, unitCost, supplier = "", voucherId = "") {
   const incoming = String(receiptNumber || "").trim() || "Sin remito";
-  const entry = [incoming, receiptDate || todayValue(), parseDecimal(quantity), parseDecimal(unitCost), String(supplier || "").trim()].join("|");
+  const entry = [incoming, receiptDate || todayValue(), parseDecimal(quantity), parseDecimal(unitCost), String(supplier || "").trim(), voucherId].join("|").replace(/\|$/, "");
   return [String(current || "").trim(), entry].filter(Boolean).join("\n");
 }
 
@@ -752,7 +755,7 @@ function hasReceiptNumber(product, receiptNumber) {
 
 function serializeReceiptEntries(entries) {
   return entries.map((entry) => entry.detailed
-    ? [entry.number, entry.date, parseDecimal(entry.quantity), parseDecimal(entry.unitCost), entry.supplier || ""].join("|")
+    ? [entry.number, entry.date, parseDecimal(entry.quantity), parseDecimal(entry.unitCost), entry.supplier || "", entry.voucherId || ""].join("|").replace(/\|$/, "")
     : entry.number
   ).filter(Boolean).join("\n");
 }
@@ -815,8 +818,11 @@ function applyExistingProductDefaultsForLine(line) {
   const product = matchingProductByName(nameInput?.value);
   if (!form || !line || !product) return;
   line.querySelector('[name="type"]').value = product.type || "Otro";
+  const vatSelect = line.querySelector('[name="vatRate"]');
+  if (vatSelect) vatSelect.value = defaultVatRate(product.type);
   line.querySelector('[name="unit"]').value = product.unit || "";
   line.querySelector('[name="unitCost"]').value = product.unitCost ?? "";
+  updateVoucherTotals();
   form.elements.warehouse.value = form.elements.warehouse.value || product.warehouse || "";
 }
 
@@ -830,7 +836,8 @@ function depositLineValues(line) {
     type: line.querySelector('[name="type"]')?.value || "Otro",
     unit: line.querySelector('[name="unit"]')?.value?.trim() || "",
     quantity: line.querySelector('[name="quantity"]')?.value || "",
-    unitCost: line.querySelector('[name="unitCost"]')?.value || ""
+    unitCost: line.querySelector('[name="unitCost"]')?.value || "",
+    vatRate: line.querySelector('[name="vatRate"]')?.value || ""
   };
 }
 
@@ -848,6 +855,8 @@ function setDepositLineValues(line, values = {}) {
   line.querySelector('[name="unit"]').value = values.unit || "";
   line.querySelector('[name="quantity"]').value = values.quantity ?? "";
   line.querySelector('[name="unitCost"]').value = values.unitCost ?? "";
+  const vat = line.querySelector('[name="vatRate"]');
+  if (vat) vat.value = values.vatRate || defaultVatRate(values.type);
 }
 
 function syncDepositLineButtons() {
@@ -944,8 +953,100 @@ function initializeDepositFormLayout() {
   removeButton.addEventListener("click", () => {
     line.remove();
     syncDepositLineButtons();
+    updateVoucherTotals();
   });
+  initializeVoucherFields(form, line, linesWrap);
   syncDepositLineButtons();
+}
+
+// ===== Comprobantes de compra (factura / remito) =====
+// Cada ingreso al depósito guarda además el comprobante completo (tipo, IVA, percepciones, vencimiento),
+// para que la app de administración lo importe sin volver a cargarlo.
+const VOUCHER_TYPES = ["Factura A", "Factura B", "Factura C", "Remito", "Sin comprobante"];
+
+function defaultVatRate(type) {
+  return /fertiliz|semilla|curasem|inoculant/i.test(String(type || "")) ? "10.5" : "21";
+}
+
+function parseVoucherRecord(record) {
+  const voucher = { ...record };
+  if (typeof voucher.lines === "string") {
+    try { voucher.lines = JSON.parse(voucher.lines || "[]"); } catch { voucher.lines = []; }
+  }
+  if (!Array.isArray(voucher.lines)) voucher.lines = [];
+  voucher.partner = String(voucher.partner || "").trim();
+  return voucher;
+}
+
+function voucherForSync(voucher) {
+  return { ...voucher, lines: JSON.stringify(voucher.lines || []) };
+}
+
+function initializeVoucherFields(form, line, linesWrap) {
+  if (form.elements.voucherType) return;
+  const header = document.createElement("div");
+  header.className = "voucher-header";
+  header.innerHTML = `
+    <label>Comprobante <select name="voucherType">${VOUCHER_TYPES.map((type) => `<option>${type}</option>`).join("")}</select></label>
+    <label>Vencimiento <input name="dueDate" type="date" /></label>
+    <label>Moneda <select name="currency"><option value="USD">US$</option><option value="ARS">Pesos</option></select></label>
+    <label class="voucher-fx hidden-panel">TC (pesos por US$) <input name="fxRate" type="text" inputmode="decimal" placeholder="Ej. 1480" /></label>
+    <label class="voucher-partner">Aporte de socio <input name="partner" list="partnerCatalogList" placeholder="Vacío = lo compra SAGRO" /></label>`;
+  // El tipo de comprobante va primero, arriba del número.
+  form.prepend(header);
+  const vatLabel = document.createElement("label");
+  vatLabel.innerHTML = `IVA <select name="vatRate"><option value="10.5">10,5 %</option><option value="21">21 %</option><option value="27">27 %</option><option value="0">Exento</option></select>`;
+  line.querySelector(".remove-deposit-line")?.before(vatLabel);
+  line.querySelector('[name="unitCost"]')?.closest("label")?.firstChild && (line.querySelector('[name="unitCost"]').closest("label").firstChild.textContent = "Precio unitario neto ");
+  const footer = document.createElement("div");
+  footer.className = "voucher-footer";
+  footer.innerHTML = `
+    <label>Percepción IVA <input name="perceptionVat" type="text" inputmode="decimal" placeholder="0" /></label>
+    <label>Percepción IIBB <input name="perceptionIibb" type="text" inputmode="decimal" placeholder="0" /></label>
+    <label>Otros cargos <input name="otherCharges" type="text" inputmode="decimal" placeholder="0" /></label>
+    <div id="voucherTotals" class="voucher-totals"></div>`;
+  linesWrap.after(footer);
+  let partnerList = document.querySelector("#partnerCatalogList");
+  if (!partnerList) {
+    partnerList = document.createElement("datalist");
+    partnerList.id = "partnerCatalogList";
+    partnerList.innerHTML = `<option value="Muller"></option>`;
+    document.body.appendChild(partnerList);
+  }
+  const fxLabel = header.querySelector(".voucher-fx");
+  form.elements.currency.addEventListener("change", () => { fxLabel.classList.toggle("hidden-panel", form.elements.currency.value !== "ARS"); updateVoucherTotals(); });
+  form.elements.voucherType.addEventListener("change", () => {
+    const label = form.elements.receiptNumber.closest("label");
+    if (label?.firstChild) label.firstChild.textContent = form.elements.voucherType.value === "Remito" ? "Nro. de remito " : "Nro. de factura ";
+  });
+  form.addEventListener("input", (event) => {
+    if (event.target.name === "type") { const vat = event.target.closest(".deposit-product-line")?.querySelector('[name="vatRate"]'); if (vat) vat.value = defaultVatRate(event.target.value); }
+    updateVoucherTotals();
+  });
+  form.addEventListener("change", updateVoucherTotals);
+  line.querySelector('[name="vatRate"]').value = defaultVatRate(line.querySelector('[name="type"]')?.value);
+}
+
+function voucherTotalsFromForm(form) {
+  const lines = depositProductLines().map(depositLineValues).filter((item) => item.name);
+  const net = lines.reduce((sum, item) => sum + parseDecimal(item.quantity) * parseDecimal(item.unitCost), 0);
+  const vat = lines.reduce((sum, item) => sum + parseDecimal(item.quantity) * parseDecimal(item.unitCost) * parseDecimal(item.vatRate) / 100, 0);
+  const perceptionVat = parseDecimal(form.elements.perceptionVat?.value);
+  const perceptionIibb = parseDecimal(form.elements.perceptionIibb?.value);
+  const otherCharges = parseDecimal(form.elements.otherCharges?.value);
+  const round = (value) => Math.round(value * 100) / 100;
+  return { lines, net: round(net), vat: round(vat), perceptionVat: round(perceptionVat), perceptionIibb: round(perceptionIibb), otherCharges: round(otherCharges), total: round(net + vat + perceptionVat + perceptionIibb + otherCharges) };
+}
+
+function updateVoucherTotals() {
+  const form = document.querySelector("#productForm");
+  const box = document.querySelector("#voucherTotals");
+  if (!form || !box) return;
+  if (editingProductId) { box.textContent = ""; return; }
+  const totals = voucherTotalsFromForm(form);
+  const currency = form.elements.currency?.value === "ARS" ? "$" : "US$";
+  const fmt = (value) => `${currency} ${value.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  box.innerHTML = `Neto <strong>${fmt(totals.net)}</strong> · IVA <strong>${fmt(totals.vat)}</strong> · Percepciones y otros <strong>${fmt(totals.perceptionVat + totals.perceptionIibb + totals.otherCharges)}</strong> · Total <strong>${fmt(totals.total)}</strong>`;
 }
 
 function ensureFilterClearButton(container, id, label, onClear) {
@@ -1069,6 +1170,22 @@ async function handleDepositProductSubmit(event) {
   }
   const wasEditing = Boolean(editingProductId);
   const changed = [];
+  const currency = shared.currency === "ARS" ? "ARS" : "USD";
+  const fxRate = parseDecimal(shared.fxRate);
+  if (!editingProductId && currency === "ARS" && !(fxRate > 0)) {
+    showToast("Indicá el tipo de cambio para pasar el precio a dólares");
+    return;
+  }
+  const toUsd = (value) => currency === "ARS" ? parseDecimal(value) / fxRate : parseDecimal(value);
+  const voucher = editingProductId ? null : (() => {
+    const totals = voucherTotalsFromForm(form);
+    return parseVoucherRecord({
+      id: uid("cmp"), type: shared.voucherType || "Factura A", number: String(shared.receiptNumber || "").trim(), date: shared.receiptDate || todayValue(), dueDate: shared.dueDate || "",
+      supplier: String(shared.supplier || "").trim(), currency, fxRate: currency === "ARS" ? fxRate : "", warehouse: shared.warehouse || "", partner: String(shared.partner || "").trim(),
+      lines: [], net: totals.net, vat: totals.vat, perceptionVat: totals.perceptionVat, perceptionIibb: totals.perceptionIibb, otherCharges: totals.otherCharges, total: totals.total,
+      status: shared.voucherType === "Remito" ? "Pendiente de factura" : "", remitoNumber: "", notes: ""
+    });
+  })();
   for (const line of lines) {
     const values = { ...line, warehouse: shared.warehouse || "" };
     const existing = editingProductId
@@ -1080,13 +1197,16 @@ async function handleDepositProductSubmit(event) {
     }
     const receiptNumbers = editingProductId
       ? receiptText(existing)
-      : appendReceiptEntry(receiptText(existing), shared.receiptNumber, shared.receiptDate, line.quantity, line.unitCost, shared.supplier);
+      : appendReceiptEntry(receiptText(existing), shared.receiptNumber, shared.receiptDate, line.quantity, toUsd(line.unitCost), shared.supplier, voucher?.id || "");
+    const productId = existing?.id || uid("prod");
+    if (voucher) voucher.lines.push({ productId, name: line.name, type: line.type, unit: line.unit, quantity: parseDecimal(line.quantity), unitPrice: parseDecimal(line.unitCost), vatRate: parseDecimal(line.vatRate || defaultVatRate(line.type)) });
+    delete values.vatRate;
     const record = {
       ...(existing || {}),
-      id: existing?.id || uid("prod"),
+      id: productId,
       ...values,
       quantity: !editingProductId && existing ? baseStock(existing) + parseDecimal(line.quantity) : parseDecimal(line.quantity),
-      unitCost: parseDecimal(line.unitCost),
+      unitCost: editingProductId ? parseDecimal(line.unitCost) : toUsd(line.unitCost),
       receiptNumbers,
       supplier: shared.supplier || existing?.supplier || "",
       receiptPhoto: receiptPhoto || existing?.receiptPhoto || ""
@@ -1105,10 +1225,16 @@ async function handleDepositProductSubmit(event) {
     changed.push(record);
   }
 
+  if (voucher) {
+    data.vouchers ||= [];
+    data.vouchers.push(voucher);
+    queueSyncVoucher(voucher);
+  }
   saveData();
   editingProductId = "";
   resetForm(form);
   resetDepositProductLines();
+  updateVoucherTotals();
   form.elements.receiptDate.required = true;
   form.elements.receiptDate.value = todayValue();
   if (form.elements.receiptPhotoFile) form.elements.receiptPhotoFile.value = "";
@@ -1119,6 +1245,114 @@ async function handleDepositProductSubmit(event) {
   document.querySelector("#productFormBand")?.classList.add("hidden-panel");
   renderAll();
   showToast(changed.length > 1 ? `${changed.length} productos cargados en el remito` : wasEditing ? "Producto y costos actualizados" : "Ingreso guardado");
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+}
+
+const formatDateValue = (value) => value ? dateShort(value) : "";
+
+function queueSyncVoucher(voucher, action = "append") {
+  const syncCopy = voucherForSync(voucher);
+  queueSync("vouchers", syncCopy, action);
+  voucher.updatedAt = syncCopy.updatedAt;
+  voucher._syncStatus = syncCopy._syncStatus;
+  voucher._syncId = syncCopy._syncId;
+  voucher._syncAction = syncCopy._syncAction;
+}
+
+function renderVouchers() {
+  const body = document.querySelector("#vouchersTable");
+  if (!body) return;
+  const rows = (data.vouchers || []).slice().sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
+  const money = (voucher, value) => `${voucher.currency === "ARS" ? "$" : "US$"} ${parseDecimal(value).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  body.innerHTML = rows.length ? rows.map((voucher) => `<tr>
+      <td>${escapeHtml(formatDateValue(voucher.date))}</td>
+      <td>${escapeHtml(voucher.type)}${voucher.remitoNumber ? `<br><span class="muted">remito ${escapeHtml(voucher.remitoNumber)}</span>` : ""}</td>
+      <td>${escapeHtml(voucher.number)}</td>
+      <td>${escapeHtml(voucher.supplier)}${voucher.partner ? `<br><span class="muted">Aporte de ${escapeHtml(voucher.partner)}</span>` : ""}</td>
+      <td>${escapeHtml((voucher.lines || []).map((item) => `${item.name} ${item.quantity} ${item.unit}`).join(", "))}</td>
+      <td>${money(voucher, voucher.net)}</td>
+      <td>${money(voucher, voucher.total)}</td>
+      <td>${escapeHtml(voucher.dueDate ? formatDateValue(voucher.dueDate) : "")}</td>
+      <td>${voucher.type === "Remito" ? `<button class="link-button" type="button" data-convert-voucher="${escapeHtml(voucher.id)}">Convertir en factura</button>` : escapeHtml(voucher.status || "")}</td>
+    </tr>`).join("") : `<tr><td colspan="9" class="muted">Todavía no hay comprobantes cargados con el formulario nuevo.</td></tr>`;
+  body.querySelectorAll("[data-convert-voucher]").forEach((button) => button.addEventListener("click", () => openVoucherConversion(button.dataset.convertVoucher)));
+}
+
+function ensureVouchersPanel() {
+  if (document.querySelector("#vouchersTable")) return;
+  const anchor = document.querySelector("#purchasesByDateTable")?.closest(".panel");
+  if (!anchor) return;
+  const panel = document.createElement("section");
+  panel.className = "panel";
+  panel.innerHTML = `<div class="panel-header"><h2>Comprobantes de compra</h2><span class="panel-note">Facturas y remitos cargados con el formulario de ingreso. La app de administración los importa.</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Número</th><th>Proveedor</th><th>Productos</th><th>Neto</th><th>Total</th><th>Vence</th><th>Estado</th></tr></thead><tbody id="vouchersTable"></tbody></table></div>
+    <div id="voucherConversion" class="form-band hidden-panel"></div>`;
+  anchor.before(panel);
+}
+
+// Remito → factura: cambia número, precios e IVA del comprobante y de los ingresos al depósito que generó.
+function openVoucherConversion(voucherId) {
+  const voucher = (data.vouchers || []).find((item) => item.id === voucherId);
+  const box = document.querySelector("#voucherConversion");
+  if (!voucher || !box) return;
+  box.innerHTML = `<h2>Convertir remito ${escapeHtml(voucher.number)} en factura</h2>
+    <form id="voucherConversionForm" class="form-grid">
+      <label>Comprobante <select name="type">${VOUCHER_TYPES.filter((type) => type !== "Remito").map((type) => `<option>${type}</option>`).join("")}</select></label>
+      <label>Nro. de factura <input name="number" required /></label>
+      <label>Fecha de factura <input name="date" type="date" required value="${escapeHtml(todayValue())}" /></label>
+      <label>Vencimiento <input name="dueDate" type="date" value="${escapeHtml(voucher.dueDate || "")}" /></label>
+      <label>Moneda <select name="currency"><option value="USD"${voucher.currency !== "ARS" ? " selected" : ""}>US$</option><option value="ARS"${voucher.currency === "ARS" ? " selected" : ""}>Pesos</option></select></label>
+      <label>TC (si es en pesos) <input name="fxRate" inputmode="decimal" value="${escapeHtml(voucher.fxRate || "")}" /></label>
+      ${(voucher.lines || []).map((item, index) => `<div class="deposit-product-line"><label>Producto <input value="${escapeHtml(item.name)}" readonly /></label><label>Cantidad <input value="${escapeHtml(item.quantity)}" readonly /></label><label>Precio unitario neto <input name="price-${index}" inputmode="decimal" value="${escapeHtml(item.unitPrice)}" required /></label><label>IVA <select name="vat-${index}">${["10.5", "21", "27", "0"].map((rate) => `<option value="${rate}"${String(item.vatRate) === rate ? " selected" : ""}>${rate === "0" ? "Exento" : `${rate.replace(".", ",")} %`}</option>`).join("")}</select></label></div>`).join("")}
+      <label>Percepción IVA <input name="perceptionVat" inputmode="decimal" value="0" /></label>
+      <label>Percepción IIBB <input name="perceptionIibb" inputmode="decimal" value="0" /></label>
+      <label>Otros cargos <input name="otherCharges" inputmode="decimal" value="0" /></label>
+      <div class="form-actions"><button type="submit">Guardar factura</button><button class="link-button" type="button" id="cancelVoucherConversion">Cancelar</button></div>
+    </form>`;
+  box.classList.remove("hidden-panel");
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+  box.querySelector("#cancelVoucherConversion").addEventListener("click", () => box.classList.add("hidden-panel"));
+  box.querySelector("#voucherConversionForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = formData(event.currentTarget);
+    const currency = values.currency === "ARS" ? "ARS" : "USD";
+    const fxRate = parseDecimal(values.fxRate);
+    if (currency === "ARS" && !(fxRate > 0)) { showToast("Indicá el tipo de cambio"); return; }
+    const toUsd = (value) => currency === "ARS" ? parseDecimal(value) / fxRate : parseDecimal(value);
+    const lines = voucher.lines.map((item, index) => ({ ...item, unitPrice: parseDecimal(values[`price-${index}`]), vatRate: parseDecimal(values[`vat-${index}`]) }));
+    const round = (value) => Math.round(value * 100) / 100;
+    const net = round(lines.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0));
+    const vat = round(lines.reduce((sum, item) => sum + item.quantity * item.unitPrice * item.vatRate / 100, 0));
+    const perceptionVat = parseDecimal(values.perceptionVat);
+    const perceptionIibb = parseDecimal(values.perceptionIibb);
+    const otherCharges = parseDecimal(values.otherCharges);
+    const remitoNumber = voucher.number;
+    Object.assign(voucher, { type: values.type, number: String(values.number).trim(), date: values.date, dueDate: values.dueDate || voucher.dueDate || "", currency, fxRate: currency === "ARS" ? fxRate : "", lines, net, vat, perceptionVat, perceptionIibb, otherCharges, total: round(net + vat + perceptionVat + perceptionIibb + otherCharges), status: "Facturado", remitoNumber });
+    // Los ingresos al depósito del remito pasan a tener el número y el precio de la factura.
+    data.products.forEach((product) => {
+      const entries = receiptEntriesForProduct(product);
+      let touched = false;
+      entries.forEach((entry) => {
+        if (entry.voucherId !== voucher.id) return;
+        const line = lines.find((item) => item.productId === product.id) || lines.find((item) => normalizeName(item.name) === normalizeName(product.name));
+        entry.number = voucher.number;
+        if (line) entry.unitCost = toUsd(line.unitPrice);
+        touched = true;
+      });
+      if (!touched) return;
+      product.receiptNumbers = serializeReceiptEntries(entries);
+      queueSync("products", product, "update");
+      recalculateApplicationsForProduct(product);
+    });
+    queueSyncVoucher(voucher, "update");
+    saveData();
+    box.classList.add("hidden-panel");
+    renderAll();
+    showToast(`Remito ${remitoNumber} convertido en factura ${voucher.number}`);
+  });
 }
 
 function displayLotName(lot) {
@@ -3098,6 +3332,7 @@ function editOrder(orderId) {
   form.elements.laborCostHa.value = order.laborCostHa || 0;
   form.elements.status.value = order.status || "Pendiente";
   form.elements.notes.value = order.notes || "";
+  if (form.elements.partner) form.elements.partner.value = order.partner || "";
   form.dataset.originalStatus = order.status || "Pendiente";
   form.dataset.defaultHectares = String(order.plannedHectares || "");
   form.querySelector('button[type="submit"]').textContent = "Actualizar orden";
@@ -5094,6 +5329,8 @@ function renderAll() {
   renderMonitors();
   renderApplications();
   renderProducts();
+  ensureVouchersPanel();
+  renderVouchers();
   renderCosts();
   renderMap();
   renderRotation();
