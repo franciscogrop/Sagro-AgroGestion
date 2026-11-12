@@ -990,7 +990,7 @@ function initializeVoucherFields(form, line, linesWrap) {
     <label>Comprobante <select name="voucherType">${VOUCHER_TYPES.map((type) => `<option>${type}</option>`).join("")}</select></label>
     <label>Vencimiento <input name="dueDate" type="date" /></label>
     <label>Moneda <select name="currency"><option value="USD">US$</option><option value="ARS">Pesos</option></select></label>
-    <label class="voucher-fx hidden-panel">TC (pesos por US$) <input name="fxRate" type="text" inputmode="decimal" placeholder="Ej. 1480" /></label>
+    <label class="voucher-fx">TC de la factura (pesos por US$) <input name="fxRate" type="text" inputmode="decimal" placeholder="Ej. 1480" /></label>
     <label class="voucher-partner">Aporte de socio <input name="partner" list="partnerCatalogList" placeholder="Vacío = lo compra SAGRO" /></label>`;
   // El tipo de comprobante va primero, arriba del número.
   form.prepend(header);
@@ -1014,7 +1014,7 @@ function initializeVoucherFields(form, line, linesWrap) {
     document.body.appendChild(partnerList);
   }
   const fxLabel = header.querySelector(".voucher-fx");
-  form.elements.currency.addEventListener("change", () => { fxLabel.classList.toggle("hidden-panel", form.elements.currency.value !== "ARS"); updateVoucherTotals(); });
+  form.elements.currency.addEventListener("change", () => { const input = fxLabel.querySelector("input"); input.placeholder = form.elements.currency.value === "ARS" ? "Obligatorio en pesos" : "El que figura en la factura"; updateVoucherTotals(); });
   form.elements.voucherType.addEventListener("change", () => {
     const label = form.elements.receiptNumber.closest("label");
     if (label?.firstChild) label.firstChild.textContent = form.elements.voucherType.value === "Remito" ? "Nro. de remito " : "Nro. de factura ";
@@ -1181,7 +1181,7 @@ async function handleDepositProductSubmit(event) {
     const totals = voucherTotalsFromForm(form);
     return parseVoucherRecord({
       id: uid("cmp"), type: shared.voucherType || "Factura A", number: String(shared.receiptNumber || "").trim(), date: shared.receiptDate || todayValue(), dueDate: shared.dueDate || "",
-      supplier: String(shared.supplier || "").trim(), currency, fxRate: currency === "ARS" ? fxRate : "", warehouse: shared.warehouse || "", partner: String(shared.partner || "").trim(),
+      supplier: String(shared.supplier || "").trim(), currency, fxRate: fxRate > 0 ? fxRate : "", warehouse: shared.warehouse || "", partner: String(shared.partner || "").trim(),
       lines: [], net: totals.net, vat: totals.vat, perceptionVat: totals.perceptionVat, perceptionIibb: totals.perceptionIibb, otherCharges: totals.otherCharges, total: totals.total,
       status: shared.voucherType === "Remito" ? "Pendiente de factura" : "", remitoNumber: "", notes: ""
     });
@@ -1276,9 +1276,41 @@ function renderVouchers() {
       <td>${money(voucher, voucher.net)}</td>
       <td>${money(voucher, voucher.total)}</td>
       <td>${escapeHtml(voucher.dueDate ? formatDateValue(voucher.dueDate) : "")}</td>
-      <td>${voucher.type === "Remito" ? `<button class="link-button" type="button" data-convert-voucher="${escapeHtml(voucher.id)}">Convertir en factura</button>` : escapeHtml(voucher.status || "")}</td>
+      <td>${voucher.type === "Remito" ? `<button class="link-button" type="button" data-convert-voucher="${escapeHtml(voucher.id)}">Convertir en factura</button><br>` : `${escapeHtml(voucher.status || "")}${voucher.status ? "<br>" : ""}`}${voucher.fxRate ? `<span class="muted">TC ${escapeHtml(String(voucher.fxRate).replace(".", ","))}</span><br>` : ""}<button class="link-button" type="button" data-edit-voucher="${escapeHtml(voucher.id)}">Corregir datos</button></td>
     </tr>`).join("") : `<tr><td colspan="9" class="muted">Todavía no hay comprobantes cargados con el formulario nuevo.</td></tr>`;
   body.querySelectorAll("[data-convert-voucher]").forEach((button) => button.addEventListener("click", () => openVoucherConversion(button.dataset.convertVoucher)));
+  body.querySelectorAll("[data-edit-voucher]").forEach((button) => button.addEventListener("click", () => openVoucherEdit(button.dataset.editVoucher)));
+}
+
+// Corrige datos del papel que no cambian el stock: número, fechas y tipo de cambio.
+function openVoucherEdit(voucherId) {
+  const voucher = (data.vouchers || []).find((item) => item.id === voucherId);
+  const box = document.querySelector("#voucherConversion");
+  if (!voucher || !box) return;
+  box.innerHTML = `<h2>Corregir ${escapeHtml(voucher.type)} ${escapeHtml(voucher.number)}</h2>
+    <p class="muted">Para cambiar precios o cantidades, editá el ingreso del producto. Si ya lo importaste en administración, corregí también allá.</p>
+    <form id="voucherEditForm" class="form-grid">
+      <label>Número <input name="number" required value="${escapeHtml(voucher.number)}" /></label>
+      <label>Fecha <input name="date" type="date" required value="${escapeHtml(voucher.date || "")}" /></label>
+      <label>Vencimiento <input name="dueDate" type="date" value="${escapeHtml(voucher.dueDate || "")}" /></label>
+      <label>TC de la factura (pesos por US$) <input name="fxRate" inputmode="decimal" value="${escapeHtml(voucher.fxRate ? String(voucher.fxRate).replace(".", ",") : "")}" placeholder="${voucher.currency === "ARS" ? "Obligatorio en pesos" : "El que figura en la factura"}" /></label>
+      <div class="form-actions"><button type="submit">Guardar</button><button type="button" class="link-button" data-cancel-voucher-edit>Cancelar</button></div>
+    </form>`;
+  box.classList.remove("hidden-panel");
+  box.querySelector("[data-cancel-voucher-edit]").addEventListener("click", () => box.classList.add("hidden-panel"));
+  box.querySelector("#voucherEditForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = formData(event.currentTarget);
+    const fxRate = parseDecimal(values.fxRate);
+    if (voucher.currency === "ARS" && !(fxRate > 0)) { showToast("Indicá el tipo de cambio"); return; }
+    if (voucher.currency === "ARS" && Number(voucher.fxRate) !== fxRate) { showToast("En pesos el TC cambia el costo: convertilo de nuevo desde el ingreso del producto"); return; }
+    Object.assign(voucher, { number: String(values.number).trim(), date: values.date, dueDate: values.dueDate || "", fxRate: fxRate > 0 ? fxRate : "" });
+    queueSyncVoucher(voucher, "update");
+    saveData();
+    box.classList.add("hidden-panel");
+    renderAll();
+    showToast("Comprobante corregido");
+  });
 }
 
 function ensureVouchersPanel() {
@@ -1305,7 +1337,7 @@ function openVoucherConversion(voucherId) {
       <label>Fecha de factura <input name="date" type="date" required value="${escapeHtml(todayValue())}" /></label>
       <label>Vencimiento <input name="dueDate" type="date" value="${escapeHtml(voucher.dueDate || "")}" /></label>
       <label>Moneda <select name="currency"><option value="USD"${voucher.currency !== "ARS" ? " selected" : ""}>US$</option><option value="ARS"${voucher.currency === "ARS" ? " selected" : ""}>Pesos</option></select></label>
-      <label>TC (si es en pesos) <input name="fxRate" inputmode="decimal" value="${escapeHtml(voucher.fxRate || "")}" /></label>
+      <label>TC de la factura <input name="fxRate" inputmode="decimal" value="${escapeHtml(voucher.fxRate || "")}" /></label>
       ${(voucher.lines || []).map((item, index) => `<div class="deposit-product-line"><label>Producto <input value="${escapeHtml(item.name)}" readonly /></label><label>Cantidad <input value="${escapeHtml(item.quantity)}" readonly /></label><label>Precio unitario neto <input name="price-${index}" inputmode="decimal" value="${escapeHtml(item.unitPrice)}" required /></label><label>IVA <select name="vat-${index}">${["10.5", "21", "27", "0"].map((rate) => `<option value="${rate}"${String(item.vatRate) === rate ? " selected" : ""}>${rate === "0" ? "Exento" : `${rate.replace(".", ",")} %`}</option>`).join("")}</select></label></div>`).join("")}
       <label>Percepción IVA <input name="perceptionVat" inputmode="decimal" value="0" /></label>
       <label>Percepción IIBB <input name="perceptionIibb" inputmode="decimal" value="0" /></label>
@@ -1330,7 +1362,7 @@ function openVoucherConversion(voucherId) {
     const perceptionIibb = parseDecimal(values.perceptionIibb);
     const otherCharges = parseDecimal(values.otherCharges);
     const remitoNumber = voucher.number;
-    Object.assign(voucher, { type: values.type, number: String(values.number).trim(), date: values.date, dueDate: values.dueDate || voucher.dueDate || "", currency, fxRate: currency === "ARS" ? fxRate : "", lines, net, vat, perceptionVat, perceptionIibb, otherCharges, total: round(net + vat + perceptionVat + perceptionIibb + otherCharges), status: "Facturado", remitoNumber });
+    Object.assign(voucher, { type: values.type, number: String(values.number).trim(), date: values.date, dueDate: values.dueDate || voucher.dueDate || "", currency, fxRate: fxRate > 0 ? fxRate : "", lines, net, vat, perceptionVat, perceptionIibb, otherCharges, total: round(net + vat + perceptionVat + perceptionIibb + otherCharges), status: "Facturado", remitoNumber });
     // Los ingresos al depósito del remito pasan a tener el número y el precio de la factura.
     data.products.forEach((product) => {
       const entries = receiptEntriesForProduct(product);
