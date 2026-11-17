@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20261117-fase3c" />
+    <link rel="stylesheet" href="styles.css?v=20261117-deposito" />
   </head>
   <body>
     <div class="app-shell">
@@ -404,22 +404,29 @@
               </div>
             </form>
           </section>
-          <section class="panel">
+          <div class="deposit-toolbar">
+            <div class="deposit-tabs" role="tablist" aria-label="Vistas del depósito">
+              <button class="deposit-tab active" role="tab" aria-selected="true" type="button" data-deposit-tab="productos">Productos <span class="deposit-tab-count" id="depositCountProducts"></span></button>
+              <button class="deposit-tab" role="tab" aria-selected="false" type="button" data-deposit-tab="comprobantes">Remitos y facturas <span class="deposit-tab-count" id="depositCountReceipts"></span></button>
+            </div>
+            <button class="link-button primary-action" id="newDepositButton" type="button">Nuevo ingreso</button>
+          </div>
+          <div class="deposit-filters">
+            <label>Producto <input id="productNameFilter" list="productCatalogList" placeholder="Todos" /></label>
+            <label class="receipts-only">Remito / factura <input id="productReceiptFilter" list="receiptCatalogList" placeholder="Todos" /></label>
+            <label class="receipts-only">Desde <input id="productReceiptDateFrom" type="date" /></label>
+            <label class="receipts-only">Hasta <input id="productReceiptDateTo" type="date" /></label>
+            <label class="receipts-only">Orden
+              <select id="productReceiptDateSort">
+                <option value="desc">Más recientes</option>
+                <option value="asc">Más antiguas</option>
+              </select>
+            </label>
+          </div>
+          <section class="panel" data-deposit-panel="productos">
             <div class="panel-header">
               <h2>Productos en depósito</h2>
-              <div class="deposit-filters">
-                <button class="link-button primary-action" id="newDepositButton" type="button">Nuevo ingreso</button>
-                <label>Producto <input id="productNameFilter" list="productCatalogList" placeholder="Todos" /></label>
-                <label>Remito <input id="productReceiptFilter" list="receiptCatalogList" placeholder="Todos" /></label>
-                <label>Desde <input id="productReceiptDateFrom" type="date" /></label>
-                <label>Hasta <input id="productReceiptDateTo" type="date" /></label>
-                <label>Orden
-                  <select id="productReceiptDateSort">
-                    <option value="desc">Más recientes</option>
-                    <option value="asc">Más antiguas</option>
-                  </select>
-                </label>
-              </div>
+              <span class="panel-note">Tocá un producto para ver su ficha, o un número de comprobante para abrirlo.</span>
             </div>
             <div class="table-wrap">
               <table>
@@ -433,7 +440,7 @@
                     <th>Costo unit.</th>
                     <th>Valorizado</th>
                     <th>Depósito</th>
-                    <th>Remitos</th>
+                    <th>Último comprobante</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -441,10 +448,10 @@
               </table>
             </div>
           </section>
-          <section class="panel">
+          <section class="panel" data-deposit-panel="comprobantes">
             <div class="panel-header">
-              <h2>Compras e ingresos por fecha</h2>
-              <span class="panel-note">Precios históricos según fecha de compra o remito</span>
+              <h2>Detalle por producto</h2>
+              <span class="panel-note">Cada renglón de cada comprobante, con su precio histórico</span>
             </div>
             <div class="table-wrap">
               <table>
@@ -725,6 +732,6 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=20261117-fase3c"></script>
+    <script src="app.js?v=20261117-deposito"></script>
   </body>
 </html>

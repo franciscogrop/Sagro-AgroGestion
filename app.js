@@ -1621,7 +1621,8 @@ function ensureVouchersPanel() {
   if (!anchor) return;
   const panel = document.createElement("section");
   panel.className = "panel";
-  panel.innerHTML = `<div class="panel-header"><h2>Comprobantes de compra</h2><span class="panel-note">Facturas y remitos cargados con el formulario de ingreso. La app de administración los importa.</span></div>
+  panel.dataset.depositPanel = "comprobantes";
+  panel.innerHTML = `<div class="panel-header"><h2>Datos fiscales de los comprobantes</h2><span class="panel-note">IVA, vencimiento y tipo de cambio de los comprobantes cargados con el formulario de ingreso, para pasarlos a administración.</span></div>
     <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Número</th><th>Proveedor</th><th>Productos</th><th>Neto</th><th>Total</th><th>Vence</th><th>Estado</th></tr></thead><tbody id="vouchersTable"></tbody></table></div>
     <div id="voucherConversion" class="form-band hidden-panel"></div>`;
   anchor.before(panel);
@@ -4504,28 +4505,30 @@ function ensureCompleteReceiptsTable() {
   if (!purchasesPanel) return null;
   const panel = document.createElement("section");
   panel.className = "panel";
+  panel.dataset.depositPanel = "comprobantes";
   panel.innerHTML = `
     <div class="panel-header">
-      <h2>Remitos completos</h2>
-      <span class="panel-note">Agrupados por numero, fecha, proveedor y deposito</span>
+      <h2>Remitos y facturas</h2>
+      <span class="panel-note">Un renglón por comprobante. Tocá el número para abrirlo.</span>
     </div>
     <div class="table-wrap">
-      <table>
+      <table class="compact-table">
         <thead>
           <tr>
             <th>Fecha</th>
-            <th>Remito</th>
+            <th>Comprobante</th>
+            <th>Tipo</th>
             <th>Proveedor</th>
-            <th>Deposito</th>
+            <th>Depósito</th>
             <th>Productos</th>
-            <th>Total</th>
+            <th>Total u$s</th>
           </tr>
         </thead>
         <tbody id="completeReceiptsTable"></tbody>
       </table>
     </div>
   `;
-  purchasesPanel.insertAdjacentElement("afterend", panel);
+  purchasesPanel.insertAdjacentElement("beforebegin", panel);
   return panel.querySelector("#completeReceiptsTable");
 }
 
@@ -4691,6 +4694,31 @@ function cancelApplicationForm() {
   renderApplications();
 }
 
+// ===== Solapas del depósito: Productos / Remitos y facturas =====
+// La solapa elegida se recuerda en este dispositivo (solo comodidad; si no se puede guardar, arranca en Productos).
+const depositTabStorageKey = "gestion-agro-deposito-solapa";
+let depositTab = safeStorageGet(depositTabStorageKey) === "comprobantes" ? "comprobantes" : "productos";
+
+function setDepositTab(tab) {
+  depositTab = tab === "comprobantes" ? "comprobantes" : "productos";
+  const view = document.querySelector("#stock");
+  if (view) view.dataset.tab = depositTab;
+  document.querySelectorAll("[data-deposit-tab]").forEach((button) => {
+    const active = button.dataset.depositTab === depositTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  try { window.localStorage?.setItem(depositTabStorageKey, depositTab); } catch { /* sin almacenamiento: no pasa nada */ }
+}
+
+function setupDepositTabs() {
+  const view = document.querySelector("#stock");
+  if (!view || view.dataset.tabsBound) return;
+  view.dataset.tabsBound = "true";
+  document.querySelectorAll("[data-deposit-tab]").forEach((button) => button.addEventListener("click", () => setDepositTab(button.dataset.depositTab)));
+  setDepositTab(depositTab);
+}
+
 function renderProducts() {
   const nameFilter = normalizeName(document.querySelector("#productNameFilter")?.value);
   const receiptFilter = normalizeName(document.querySelector("#productReceiptFilter")?.value);
@@ -4714,9 +4742,11 @@ function renderProducts() {
   if (supplierList) supplierList.innerHTML = supplierCatalog.map((supplier) => `<option value="${supplier}"></option>`).join("");
   const filteredProducts = productsForDisplay.filter((product) => {
     if (nameFilter && !normalizeName(product.name).includes(nameFilter)) return false;
-    if (receiptFilter && !normalizeName(receiptLabels(product).join(" ")).includes(receiptFilter)) return false;
     return true;
   });
+  setupDepositTabs();
+  const vouchersById = new Map((data.vouchers || []).map((voucher) => [voucher.id, voucher]));
+  const receiptLink = (entry, label = entry.number || "Sin número") => `<button class="receipt-link" type="button" data-open-receipt-key="${escapeHtml(receiptGroupKey(entry))}" title="Abrir comprobante">${escapeHtml(label)}</button>`;
 
   document.querySelector("#productsTable").innerHTML = filteredProducts
     .map((product) => {
@@ -4732,8 +4762,16 @@ function renderProducts() {
         <td>${number(stock.available, 2)} ${product.unit}</td>
         <td>${money(unitCost)}</td>
         <td>${money(stock.available * unitCost)}</td>
-        <td>${warehouses.join(", ") || "-"} · ${statusBadge(product.status || "OK")}</td>
-        <td>${receiptLabels(product).join(", ") || "-"}</td>
+        <td class="nowrap" title="${escapeHtml(warehouses.join(", "))}">${escapeHtml(warehouses[0] || "-")}${warehouses.length > 1 ? ` <small class="muted">+${warehouses.length - 1}</small>` : ""}${product.status && product.status !== "OK" ? ` ${statusBadge(product.status)}` : ""}</td>
+        <td class="receipt-cell nowrap">${(() => {
+          // Una sola línea: el comprobante más reciente (navegable) y cuántos más hay (abre la ficha con todos).
+          const entries = receiptEntries(product)
+            .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+          if (!entries.length) return "-";
+          const latest = entries[0];
+          const more = entries.length > 1 ? ` <button class="link-button receipt-more" type="button" data-open-product-receipts="${escapeHtml(product.id)}" title="Ver los ${entries.length} comprobantes">+${entries.length - 1}</button>` : "";
+          return `${receiptLink(latest)}${latest.date ? ` <small class="muted">${dateShort(latest.date)}</small>` : ""}${more}`;
+        })()}</td>
         <td><button class="link-button" data-edit-product="${product.id}" type="button">Editar</button></td>
       </tr>
     `;
@@ -4768,7 +4806,7 @@ function renderProducts() {
     <tr class="clickable-row" data-open-product="${entry.product.id}">
       <td>${dateShort(entry.date)}</td>
       <td>${entry.product.name}</td>
-      <td>${entry.number || "-"}</td>
+      <td class="nowrap">${entry.number ? receiptLink({ ...entry, supplier: entry.supplier || entry.product.supplier || "", sourceWarehouse: entry.sourceWarehouse || entry.product.warehouse || "" }) : "-"}</td>
       <td>${number(entry.quantity, 2)} ${entry.sourceUnit || entry.product.unit || ""}</td>
       <td>${money(entry.unitCost)}</td>
       <td>${money(parseDecimal(entry.quantity) * parseDecimal(entry.unitCost))}</td>
@@ -4790,26 +4828,54 @@ function renderProducts() {
         warehouse,
         products: [],
         total: 0,
+        voucher: entry.voucherId ? vouchersById.get(entry.voucherId) : null,
         key
       });
     }
     const group = receiptGroups.get(key);
+    if (!group.voucher && entry.voucherId) group.voucher = vouchersById.get(entry.voucherId) || null;
     group.products.push(`${entry.sourceProductName || entry.product.name}: ${number(entry.quantity, 2)} ${entry.sourceUnit || entry.product.unit || ""}`);
     group.total += parseDecimal(entry.quantity) * parseDecimal(entry.unitCost);
   });
   const completeReceiptsTable = ensureCompleteReceiptsTable();
   if (completeReceiptsTable) {
-    completeReceiptsTable.innerHTML = Array.from(receiptGroups.values()).map((group) => `
-      <tr class="clickable-row" data-open-receipt="${group.key}">
-        <td>${dateShort(group.date)}</td>
-        <td>${group.number}</td>
-        <td>${group.supplier || "-"}</td>
-        <td>${group.warehouse || "-"}</td>
-        <td>${group.products.join("<br>")}</td>
-        <td>${money(group.total)}</td>
-      </tr>
-    `).join("") || `<tr><td colspan="6">No hay remitos completos para los filtros seleccionados.</td></tr>`;
+    const groups = Array.from(receiptGroups.values());
+    completeReceiptsTable.innerHTML = groups.map((group) => {
+      // Una línea: primer producto y cuántos más (la lista completa en el título y en el comprobante).
+      const shown = escapeHtml(group.products[0] || "-");
+      const extra = group.products.length > 1 ? ` <small class="muted">+${group.products.length - 1}</small>` : "";
+      return `
+      <tr class="clickable-row" data-open-receipt="${escapeHtml(group.key)}">
+        <td class="nowrap">${dateShort(group.date)}</td>
+        <td class="nowrap"><button class="receipt-link" type="button" data-open-receipt-key="${escapeHtml(group.key)}">${escapeHtml(group.number)}</button></td>
+        <td>${escapeHtml(group.voucher?.type || "-")}</td>
+        <td>${escapeHtml(group.supplier || "-")}</td>
+        <td>${escapeHtml(group.warehouse || "-")}</td>
+        <td class="products-cell" title="${escapeHtml(group.products.join("\n"))}">${shown}${extra}</td>
+        <td class="nowrap">${money(group.total)}</td>
+      </tr>`;
+    }).join("") || `<tr><td colspan="7">No hay remitos ni facturas para los filtros seleccionados.</td></tr>`;
+    const receiptsCount = document.querySelector("#depositCountReceipts");
+    if (receiptsCount) receiptsCount.textContent = groups.length ? String(groups.length) : "";
   }
+  const productsCount = document.querySelector("#depositCountProducts");
+  if (productsCount) productsCount.textContent = filteredProducts.length ? String(filteredProducts.length) : "";
+  document.querySelectorAll("#stock [data-open-receipt-key]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openReceiptDetail(button.dataset.openReceiptKey);
+    });
+  });
+  document.querySelectorAll("#stock [data-open-product-receipts]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectedProductId = button.dataset.openProductReceipts;
+      selectedReceiptKey = "";
+      editingReceiptIndex = -1;
+      renderProductDetail();
+      switchView("ficha-deposito");
+    });
+  });
 
   document.querySelectorAll("[data-edit-product]").forEach((button) => {
     button.addEventListener("click", (event) => {

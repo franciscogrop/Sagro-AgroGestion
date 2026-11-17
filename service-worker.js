@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestion-agro-cache-v120-fase3c";
+const CACHE_NAME = "gestion-agro-cache-v121-deposito";
 const ASSETS = [
   "./",
   "./index.html",

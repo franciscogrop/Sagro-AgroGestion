@@ -2768,3 +2768,122 @@ tr.contractor-month td:first-child { padding-left: 28px; }
     margin-bottom: 8px;
   }
 }
+
+/* ===== Depósito: solapas Productos / Remitos y facturas ===== */
+.deposit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.deposit-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.deposit-tab {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+.deposit-tab:hover { color: var(--green-dark); }
+
+.deposit-tab.active {
+  background: var(--green);
+  color: #fff;
+}
+
+.deposit-tab-count {
+  display: inline-block;
+  min-width: 20px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+  padding: 1px 6px;
+}
+
+.deposit-tab.active .deposit-tab-count { background: rgba(255, 255, 255, 0.22); }
+.deposit-tab-count:empty { display: none; }
+
+#stock > .deposit-filters {
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+#stock[data-tab="productos"] [data-deposit-panel="comprobantes"],
+#stock[data-tab="productos"] .receipts-only,
+#stock[data-tab="comprobantes"] [data-deposit-panel="productos"] {
+  display: none;
+}
+
+/* Número de comprobante: se ve y se usa como link, sin cambiar el alto del renglón */
+.receipt-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--green-dark);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.receipt-link:hover { color: var(--green); }
+
+.receipt-cell { min-width: 170px; }
+
+.receipt-line {
+  display: block;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.receipt-line small { color: var(--muted); }
+
+.receipt-more {
+  padding: 0;
+  font-size: 12px;
+}
+
+#productsTable td,
+#completeReceiptsTable td,
+#purchasesByDateTable td {
+  vertical-align: top;
+}
+
+.products-cell { min-width: 200px; line-height: 1.45; }
+td.nowrap { white-space: nowrap; }
+
+@media (max-width: 620px) {
+  .deposit-toolbar { flex-direction: column; align-items: stretch; }
+  .deposit-tabs { display: flex; }
+  .deposit-tab { flex: 1; padding: 10px 8px; }
+  #stock > .deposit-filters input,
+  #stock > .deposit-filters select { width: 100%; }
+  #stock > .deposit-filters label { flex: 1 1 140px; }
+}
+
+#productsTable td:first-child { min-width: 150px; }
+.receipt-more { font-weight: 700; margin-left: 2px; }
+#productsTable td:nth-child(n+3):nth-child(-n+7),
+#purchasesByDateTable td:nth-child(1),
+#purchasesByDateTable td:nth-child(n+4):nth-child(-n+6) {
+  white-space: nowrap;
+}
+
+.products-cell { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
