@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20261112-tc" />
+    <link rel="stylesheet" href="styles.css?v=20261117-fase3c" />
   </head>
   <body>
     <div class="app-shell">
@@ -27,6 +27,7 @@
           <div class="nav-secondary">
             <button class="nav-item" data-view="stock">Depósito</button>
             <button class="nav-item" data-view="costos">Costos</button>
+            <button class="nav-item" data-view="contratistas">Contratistas</button>
             <button class="nav-item" data-view="rotacion">Rotación</button>
             <button class="nav-item" data-view="historico">Histórico</button>
             <button class="nav-item" data-view="cierre">Cierre de campaña</button>
@@ -37,6 +38,7 @@
             <button class="nav-item" data-view="dashboard">Panel</button>
             <button class="nav-item" data-view="stock">Depósito</button>
             <button class="nav-item" data-view="costos">Costos</button>
+            <button class="nav-item" data-view="contratistas">Contratistas</button>
             <button class="nav-item" data-view="rotacion">Rotación</button>
             <button class="nav-item" data-view="historico">Histórico</button>
             <button class="nav-item" data-view="cierre">Cierre</button>
@@ -69,9 +71,18 @@
 
           <section class="panel">
             <div class="panel-header">
-              <h2>Alertas de depósito y pagos</h2>
+              <h2>Comprobantes y vencimientos</h2>
+              <span class="panel-note">Según los comprobantes cargados en Depósito. El pago se registra en la app de administración.</span>
             </div>
             <div id="dashboardPaymentAlerts" class="alert-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Datos para completar</h2>
+              <span class="panel-note">Lo que falta para que costos y márgenes den bien. Tocá una línea para abrir el registro.</span>
+            </div>
+            <div id="dashboardDataAlerts" class="alert-grid"></div>
           </section>
 
           <section class="panel sync-panel">
@@ -461,6 +472,12 @@
         </section>
 
         <section class="view" id="costos">
+          <div class="campaign-bar">
+            <label class="inline-select">Campaña
+              <select id="costCampaignSelect"></select>
+            </label>
+            <span class="panel-note" id="costCampaignNote"></span>
+          </div>
           <div class="cost-summary" id="costSummary"></div>
           <section class="panel">
             <div class="panel-header">
@@ -493,6 +510,58 @@
                   </tr>
                 </thead>
                 <tbody id="costTable"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Margen bruto por lote</h2>
+              <span class="panel-note">Ingreso = kg cosechados × precio por tn del cierre de campaña. Costos = insumos y labores de la app + otros costos del cierre. Todo en u$s.</span>
+            </div>
+            <div class="cost-summary margin-summary" id="marginSummary"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Lote</th>
+                    <th>Cultivo</th>
+                    <th>Ha</th>
+                    <th>Rinde kg/ha</th>
+                    <th>Precio u$s/tn</th>
+                    <th>Ingreso</th>
+                    <th>Costos app</th>
+                    <th>Otros costos</th>
+                    <th>Margen</th>
+                    <th>Margen u$s/ha</th>
+                    <th>Rinde de indiferencia kg/ha</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="marginTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="contratistas">
+          <div class="campaign-bar">
+            <label class="inline-select">Campaña
+              <select id="contractorCampaignSelect"></select>
+            </label>
+            <button class="link-button" id="contractorCsv" type="button">Descargar CSV para cruzar con administración</button>
+          </div>
+          <div class="cost-summary" id="contractorSummary"></div>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Labores por contratista</h2>
+              <span class="panel-note">Por mes de ejecución (fecha de finalización, o de la orden si no tiene). Tocá un contratista para ver el detalle por mes.</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Contratista</th><th>Período</th><th>Órdenes</th><th>Ha</th><th>Labor</th><th>u$s/ha</th><th></th></tr>
+                </thead>
+                <tbody id="contractorTable"></tbody>
               </table>
             </div>
           </section>
@@ -656,6 +725,6 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=20261112-tc"></script>
+    <script src="app.js?v=20261117-fase3c"></script>
   </body>
 </html>

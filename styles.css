@@ -2615,3 +2615,156 @@ td {
 .voucher-header, .voucher-footer { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; grid-column: 1 / -1; }
 .voucher-totals { grid-column: 1 / -1; padding: 8px 10px; border-radius: 8px; background: #f2f6ef; }
 #voucherConversion { margin-top: 12px; }
+
+/* Fase 1: problemas de sincronización visibles y resolubles */
+.sync-problem-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sync-status .sync-line.sync-conflict,
+.sync-status .sync-line.sync-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--ink);
+}
+
+.sync-line.sync-conflict { background: #fdecec; border: 1px solid #f3c2c2; }
+.sync-line.sync-error { background: #fff0d8; border: 1px solid #f1d29b; }
+.sync-status .sync-line > span { display: block; }
+.sync-status .sync-line-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.sync-status .sync-line small { color: var(--muted); }
+
+.sync-badge.conflict {
+  background: #fdecec;
+  color: #a12626;
+}
+
+.sync-icon-button.has-problems {
+  border-color: #d64545;
+  box-shadow: 0 0 0 3px rgba(214, 69, 69, 0.18);
+  color: #a12626;
+}
+
+/* Fase 2: panel, campaña de costos y margen */
+.alert-card.warn { border-color: #f1d29b; background: #fffaf0; }
+.alert-card.bad { border-color: #f3c2c2; background: #fff6f6; }
+.alert-card.bad strong { color: #a12626; }
+.alert-line.muted { color: var(--muted); font-style: italic; }
+
+.campaign-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 14px;
+}
+
+.campaign-bar select {
+  font-weight: 700;
+}
+
+.margin-summary {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 0 16px 16px;
+}
+
+.margin-summary article {
+  box-shadow: none;
+}
+
+td.value-good { color: var(--green-dark); font-weight: 700; }
+td.value-bad { color: #a12626; font-weight: 700; }
+tr.row-incomplete td { color: var(--muted); }
+
+.min-stock-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.min-stock-form label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.min-stock-form input {
+  width: 110px;
+}
+
+@media (max-width: 900px) {
+  .margin-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.reference-prices {
+  display: grid;
+  gap: 8px;
+  margin: 0 16px 16px;
+  padding: 12px 14px;
+  border: 1px solid #f1d29b;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.reference-price-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.reference-price-grid label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+td.nowrap { white-space: nowrap; }
+td.nowrap small { color: var(--muted); }
+
+/* Fase 3 */
+.drive-links { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+tr.contractor-row.open td { background: #eef6ef; }
+tr.contractor-month td { background: #fafcf9; font-size: 13px; }
+tr.contractor-month td:first-child { padding-left: 28px; }
+
+/* Tablet / ventana angosta: el menú era una grilla con la mitad de los botones apilados en una sola celda
+   y ocupaba media pantalla fija. Ahora es una tira de una línea que se desliza de costado. */
+@media (min-width: 621px) and (max-width: 980px) {
+  .nav {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 4px;
+  }
+
+  .nav-secondary {
+    display: contents;
+  }
+
+  .sidebar,
+  .main {
+    min-width: 0;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+    padding: 8px 12px;
+  }
+
+  .brand {
+    margin-bottom: 8px;
+  }
+}

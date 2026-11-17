@@ -12,15 +12,15 @@ const starterData = {
   ],
   products: [
     { id: "prod-1", name: "Glifosato", type: "Herbicida", unit: "lt", quantity: 540, unitCost: 3100, warehouse: "Depósito principal" },
-    { id: "prod-2", name: "Urea", type: "Fertilizante", unit: "kg", quantity: 4200, unitCost: 780, warehouse: "Galp?n fertilizantes" },
+    { id: "prod-2", name: "Urea", type: "Fertilizante", unit: "kg", quantity: 4200, unitCost: 780, warehouse: "Galpón fertilizantes" },
     { id: "prod-3", name: "Fungicida mezcla", type: "Fungicida", unit: "lt", quantity: 120, unitCost: 8200, warehouse: "Depósito principal" }
   ],
   orders: [
     { id: "ord-1", date: "2026-05-12", lotId: "lot-1", task: "Monitoreo de malezas", owner: "Juan", status: "Pendiente", notes: "" },
-    { id: "ord-2", date: "2026-05-18", lotId: "lot-2", task: "Fertilizaci?n nitrogenada", owner: "Contratista", status: "En curso", notes: "" }
+    { id: "ord-2", date: "2026-05-18", lotId: "lot-2", task: "Fertilización nitrogenada", owner: "Contratista", status: "En curso", notes: "" }
   ],
   monitors: [
-    { id: "mon-1", date: "2026-05-01", lotId: "lot-1", cropStatus: "Bueno", weeds: "Baja presi?n", issues: "Sin plagas", recommendation: "Revisar en 7 d?as" }
+    { id: "mon-1", date: "2026-05-01", lotId: "lot-1", cropStatus: "Bueno", weeds: "Baja presión", issues: "Sin plagas", recommendation: "Revisar en 7 días" }
   ],
   applications: [
     { id: "app-1", date: "2026-04-20", lotId: "lot-1", productId: "prod-1", dose: 2.2, hectares: 86, laborCostHa: 4200, productCost: 586520, totalCost: 947720 }
@@ -83,7 +83,7 @@ let closureCropFilter = "Todos";
 let historyLotCropFilter = "Todos";
 let historyLotCampaignFilter = "Todos";
 const otherHistoryCrops = ["Lino", "Arveja", "Carinata", "Sorgo"];
-const forageHistoryCrops = ["Alfalfa", "Avena", "Moha", "Verdeo", "Raigras", "Raigr?s", "Agropiro", "Cebadilla", "Campo natural"];
+const forageHistoryCrops = ["Alfalfa", "Avena", "Moha", "Verdeo", "Raigras", "Raigrás", "Agropiro", "Cebadilla", "Campo natural"];
 let mapZoom = 2.2;
 let mapPanX = 0;
 let mapPanY = 0;
@@ -98,12 +98,13 @@ const titles = {
   stock: "Depósito",
   "ficha-deposito": "Ficha del insumo",
   costos: "Costos por lote",
+  contratistas: "Labores por contratista",
   "ficha-costos-lote": "Costos del lote",
   "ficha-costos-rubro": "Detalle de costos",
-  rotacion: "Rotaci?n de cultivos",
-  historico: "Panel hist?rico",
-  "ficha-historico-cultivo": "Hist?rico por cultivo",
-  "ficha-historico-lote": "Hist?rico por lote",
+  rotacion: "Rotación de cultivos",
+  historico: "Panel histórico",
+  "ficha-historico-cultivo": "Histórico por cultivo",
+  "ficha-historico-lote": "Histórico por lote",
   cierre: "Cierre de campaña",
   "ficha-campana": "Ficha de campaña",
   "ficha-lote": "Ficha del lote",
@@ -136,8 +137,12 @@ function loadSyncQueue() {
 }
 
 function normalizeSyncQueueItem(item) {
-  if (item?.record) delete item.record.baseUpdatedAt;
+  if (item && typeof item.attempts !== "number") item.attempts = 0;
   return item;
+}
+
+function syncItemKey(item) {
+  return `${item?.table || ""}|${recordMergeKey(item?.table, item?.record || {})}`;
 }
 
 function saveSyncQueue() {
@@ -169,27 +174,56 @@ function safeStorageSet(key, value) {
   try {
     window.localStorage?.setItem(key, value);
   } catch {
-    showToast("No se pudo guardar en este dispositivo. No cierres la app: sincroniz? antes de continuar.");
+    showToast("No se pudo guardar en este dispositivo. No cierres la app: sincronizá antes de continuar.");
   }
 }
 
-function queueSync(table, record, action = "append") {
+// Cada cambio viaja con la fecha de la última versión que este celular vio en la planilla (baseUpdatedAt).
+// Si en la planilla hay una versión más nueva (otro celular, una corrección a mano o un script), el Apps Script
+// no la pisa: devuelve un conflicto y la app pregunta qué versión queda.
+let syncInFlightId = "";
+
+function queueSync(table, record, action = "append", options = {}) {
+  averageCostVersion += 1; // cualquier cambio invalida el caché de cálculos
   const updatedAt = new Date().toISOString();
   if (record) record.updatedAt = updatedAt;
   const syncRecord = enrichRecordForSync(record);
-  delete syncRecord.baseUpdatedAt;
+  delete syncRecord._remoteUpdatedAt;
+  delete syncRecord._syncStatus;
+  delete syncRecord._syncId;
+  delete syncRecord._syncAction;
+  delete syncRecord._syncedAt;
+  syncRecord.baseUpdatedAt = String(record?._remoteUpdatedAt || "");
   syncRecord.updatedAt = updatedAt;
   const item = {
     syncId: uid("sync"),
     table,
     action,
     record: syncRecord,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    attempts: 0,
+    // auto: recálculo de costos que hace la app sola. Si choca con otra versión se descarta y se recalcula.
+    auto: Boolean(options.auto)
   };
+  // Si el mismo registro ya tenía un cambio esperando (y todavía no se está enviando), se reemplaza por el nuevo:
+  // conserva la versión de base y la acción original (un alta sigue siendo alta). Nuevo syncId para que el
+  // Apps Script no lo descarte como repetido.
+  const key = syncItemKey(item);
+  const previousIndex = action === "delete" ? -1 : syncQueue.findIndex((queued) =>
+    queued.syncId !== syncInFlightId && !queued.conflict && queued.action !== "delete" && syncItemKey(queued) === key);
+  if (previousIndex >= 0) {
+    const previous = syncQueue[previousIndex];
+    item.action = previous.action;
+    if (previous.record && !Object.prototype.hasOwnProperty.call(previous.record, "baseUpdatedAt")) delete item.record.baseUpdatedAt;
+    else item.record.baseUpdatedAt = previous.record?.baseUpdatedAt ?? item.record.baseUpdatedAt;
+    item.createdAt = previous.createdAt;
+    item.auto = item.auto && Boolean(previous.auto);
+    syncQueue.splice(previousIndex, 1);
+  }
   if (record) {
     record._syncStatus = action === "delete" ? "delete-pending" : "pending";
     record._syncId = item.syncId;
-    record._syncAction = action;
+    record._syncAction = item.action;
   }
   syncQueue.push(item);
   saveSyncQueue();
@@ -199,7 +233,15 @@ function queueSync(table, record, action = "append") {
 
 function enrichRecordForSync(record) {
   const enriched = { ...record };
-  if (enriched.lotId && !enriched.lotName) enriched.lotName = lotName(enriched.lotId);
+  delete enriched.driveLinks; // los links de Drive los escribe solo el Apps Script al subir la foto
+  // El nombre legible del lote se recalcula siempre (registros viejos traían el ID en la columna "lote").
+  const lot = enriched.lotId ? findLot(enriched) : null;
+  if (lot) {
+    enriched.lotId = lot.id;
+    enriched.lotName = displayLotName(lot);
+  } else if (enriched.lotId && !enriched.lotName) {
+    enriched.lotName = lotName(enriched.lotId);
+  }
   if (enriched.productId && !enriched.productName) enriched.productName = productName(enriched.productId);
   return enriched;
 }
@@ -209,7 +251,9 @@ function syncMessage() {
   const urlState = syncConfig.apiUrl ? (syncConfig.apiKey ? "URL y clave configuradas" : "URL configurada, falta la clave de acceso") : "falta pegar la URL de Apps Script";
   const connection = navigator.onLine === false ? "sin conexion" : "con conexion";
   if (!pending) return `Todo sincronizado (${urlState}, ${connection}).`;
-  return `${pending} carga${pending === 1 ? "" : "s"} pendiente${pending === 1 ? "" : "s"} (${urlState}, ${connection}).`;
+  const problems = syncQueue.filter((item) => item.conflict || item.lastError).length;
+  const problemText = problems ? ` ${problems} necesita${problems === 1 ? "" : "n"} que la revises.` : "";
+  return `${pending} carga${pending === 1 ? "" : "s"} pendiente${pending === 1 ? "" : "s"} (${urlState}, ${connection}).${problemText}`;
 }
 
 function renderSyncStatus() {
@@ -219,20 +263,43 @@ function renderSyncStatus() {
   const globalSyncNow = document.querySelector("#globalSyncNow");
   if (input && document.activeElement !== input) input.value = syncConfig.apiUrl || "";
   if (status) {
-    const pendingDetail = syncQueue.slice(0, 5).map((item) => {
-      const label = item.record?.date ? `${dateShort(item.record.date)} ? ` : "";
-      return `<span class="sync-line">${label}${syncTableLabel(item.table)} ? ${item.record?.task || item.record?.cropStatus || item.record?.name || item.record?.id || "registro"}</span>`;
-    }).join("");
+    const describe = (item) => {
+      const label = item.record?.date ? `${dateShort(item.record.date)} · ` : "";
+      return `${label}${syncTableLabel(item.table)} · ${escapeHtml(item.record?.task || item.record?.cropStatus || item.record?.name || item.record?.number || item.record?.productName || item.record?.id || "registro")}`;
+    };
+    const conflicts = syncQueue.filter((item) => item.conflict);
+    const failing = syncQueue.filter((item) => !item.conflict && item.lastError);
+    const waiting = syncQueue.filter((item) => !item.conflict && !item.lastError);
+    const conflictDetail = conflicts.map((item) => `
+      <div class="sync-line sync-conflict">
+        <span><b>Cambiado en otro lado:</b> ${describe(item)}. En la planilla hay una versión más nueva que la que tenía este celular.</span>
+        <span class="sync-line-actions">
+          <button class="link-button" type="button" data-sync-keep="${escapeHtml(item.syncId)}">Guardar mi versión</button>
+          <button class="link-button" type="button" data-sync-discard="${escapeHtml(item.syncId)}">Usar la de la planilla</button>
+        </span>
+      </div>`).join("");
+    const failingDetail = failing.map((item) => `
+      <div class="sync-line sync-error">
+        <span><b>No se pudo guardar</b> (${item.attempts} intento${item.attempts === 1 ? "" : "s"}): ${describe(item)}<br><small>${escapeHtml(item.lastError)}</small></span>
+        <span class="sync-line-actions"><button class="link-button" type="button" data-sync-discard="${escapeHtml(item.syncId)}">Descartar este cambio</button></span>
+      </div>`).join("");
+    const photoDetail = photoUploadsPending ? `<span class="sync-line">${photoUploadsPending} foto${photoUploadsPending === 1 ? "" : "s"} completa${photoUploadsPending === 1 ? "" : "s"} esperando subir a Drive (se suben al sincronizar con señal)</span>` : "";
+    const pendingDetail = photoDetail + waiting.slice(0, 5).map((item) => `<span class="sync-line">${describe(item)}</span>`).join("")
+      + (waiting.length > 5 ? `<span class="sync-line muted">y ${waiting.length - 5} más…</span>` : "");
     status.innerHTML = `
       <strong>${syncRunning ? "Sincronizando..." : syncMessage()}</strong>
-      <span>Los datos quedan guardados en este navegador aunque no haya se?al.</span>
+      <span>Los datos quedan guardados en este navegador aunque no haya señal.</span>
+      ${conflictDetail || failingDetail ? `<div class="sync-problem-list">${conflictDetail}${failingDetail}</div>` : ""}
       ${pendingDetail ? `<div class="sync-pending-list">${pendingDetail}</div>` : ""}
     `;
+    status.querySelectorAll("[data-sync-keep]").forEach((button) => button.addEventListener("click", () => resolveSyncConflict(button.dataset.syncKeep, "keep")));
+    status.querySelectorAll("[data-sync-discard]").forEach((button) => button.addEventListener("click", () => resolveSyncConflict(button.dataset.syncDiscard, "discard")));
   }
   if (syncNow) syncNow.disabled = syncRunning || !syncConfig.apiUrl;
   if (globalSyncNow) {
     globalSyncNow.disabled = syncRunning || !syncConfig.apiUrl;
     globalSyncNow.classList.toggle("syncing", syncRunning);
+    globalSyncNow.classList.toggle("has-problems", syncQueue.some((item) => item.conflict || item.lastError));
   }
 }
 
@@ -243,14 +310,13 @@ function syncTableLabel(table) {
     orders: "Orden",
     monitors: "Monitoreo",
     applications: "Aplicación",
-    closures: "Cierre"
+    closures: "Cierre",
+    vouchers: "Comprobante"
   };
   return labels[table] || table;
 }
 
-function markSynced(syncId) {
-  const queueItem = syncQueue.find((item) => item.syncId === syncId);
-  if (!queueItem) return;
+function syncCollection(table) {
   const collectionByTable = {
     lots: data.lots,
     products: data.products,
@@ -260,13 +326,41 @@ function markSynced(syncId) {
     closures: data.closures,
     vouchers: data.vouchers || []
   };
-  const collection = collectionByTable[queueItem.table] || [];
-  const record = collection.find((item) => item._syncId === syncId || item.id === queueItem.record?.id);
+  return collectionByTable[table] || [];
+}
+
+function localRecordForSyncItem(queueItem) {
+  const collection = syncCollection(queueItem.table);
+  const key = recordMergeKey(queueItem.table, queueItem.record || {});
+  return collection.find((item) => item._syncId === queueItem.syncId)
+    || collection.find((item) => recordMergeKey(queueItem.table, item) === key);
+}
+
+// El Apps Script ya tiene esta versión: se registra como la nueva base para próximos cambios del mismo registro.
+function markSynced(syncId) {
+  const queueItem = syncQueue.find((item) => item.syncId === syncId);
+  if (!queueItem) return;
+  const sentUpdatedAt = queueItem.record?.updatedAt || "";
+  const key = syncItemKey(queueItem);
+  syncQueue.forEach((other) => {
+    if (other.syncId !== syncId && syncItemKey(other) === key && other.record) other.record.baseUpdatedAt = sentUpdatedAt;
+  });
+  const record = localRecordForSyncItem(queueItem);
   if (record && queueItem.action !== "delete") {
-    record._syncStatus = "synced";
-    record._syncedAt = new Date().toISOString();
-    window.setTimeout(renderAll, syncedBadgeVisibleMs + 250);
+    record._remoteUpdatedAt = sentUpdatedAt;
+    if (record._syncId === syncId) {
+      record._syncStatus = "synced";
+      record._syncedAt = new Date().toISOString();
+    }
+    scheduleBadgeRefresh();
   }
+}
+
+// Un solo redibujado para sacar los carteles "Sincronizado", aunque se hayan sincronizado muchos registros.
+let badgeRefreshTimer = 0;
+function scheduleBadgeRefresh() {
+  window.clearTimeout(badgeRefreshTimer);
+  badgeRefreshTimer = window.setTimeout(renderAll, syncedBadgeVisibleMs + 250);
 }
 
 function syncBadge(record) {
@@ -276,8 +370,57 @@ function syncBadge(record) {
     if (syncedAt && Date.now() - syncedAt > syncedBadgeVisibleMs) return "";
     return `<span class="sync-badge synced">Sincronizado</span>`;
   }
-  if (record._syncStatus === "delete-pending") return `<span class="sync-badge pending">Eliminaci?n pendiente</span>`;
+  const queued = syncQueue.find((item) => item.syncId === record._syncId);
+  if (queued?.conflict) return `<span class="sync-badge conflict">Conflicto: revisar en Sincronización</span>`;
+  if (queued?.lastError) return `<span class="sync-badge conflict">No se pudo guardar: ver Sincronización</span>`;
+  if (record._syncStatus === "delete-pending") return `<span class="sync-badge pending">Eliminación pendiente</span>`;
   return `<span class="sync-badge pending">Pendiente de sincronizar</span>`;
+}
+
+function removeFromSyncQueue(syncId) {
+  syncQueue = syncQueue.filter((item) => item.syncId !== syncId);
+  saveSyncQueue();
+}
+
+// Conflicto o error: "keep" reenvía la versión del celular pisando la de la planilla;
+// "discard" tira el cambio del celular y vuelve a leer la planilla.
+async function resolveSyncConflict(syncId, mode) {
+  const item = syncQueue.find((queued) => queued.syncId === syncId);
+  if (!item) return;
+  if (mode === "keep") {
+    if (!window.confirm("Se va a guardar la versión de este celular y se pierde la que está en la planilla. ¿Seguir?")) return;
+    delete item.record.baseUpdatedAt; // sin base: el Apps Script guarda esta versión sin comparar
+    item.conflict = false;
+    item.lastError = "";
+    item.syncId = uid("sync");
+    const record = localRecordForSyncItem({ ...item, syncId });
+    if (record) record._syncId = item.syncId;
+    saveSyncQueue();
+    saveData();
+    syncPending();
+    return;
+  }
+  const message = item.conflict
+    ? "Se descarta el cambio hecho en este celular y queda la versión de la planilla. ¿Seguir?"
+    : item.action === "append"
+      ? "Este registro nuevo no se va a guardar en la planilla y se borra de este celular. ¿Seguir?"
+      : "Se descarta este cambio: no se va a guardar en la planilla y queda la versión de la planilla. ¿Seguir?";
+  if (!window.confirm(message)) return;
+  const record = localRecordForSyncItem(item);
+  if (record) {
+    record._syncStatus = undefined;
+    record._syncId = undefined;
+    record._syncAction = undefined;
+    record._remoteUpdatedAt = "";
+  }
+  removeFromSyncQueue(syncId);
+  saveData();
+  renderAll();
+  syncPending();
+}
+
+function syncFailureIsGlobal(message) {
+  return /clave de acceso/i.test(String(message || ""));
 }
 
 async function syncPending() {
@@ -294,57 +437,126 @@ async function syncPending() {
   syncRunning = true;
   renderSyncStatus();
 
-  const batch = syncQueue.slice();
+  // Se envía de a un registro. Si uno falla, se sigue con los demás (antes uno trabado frenaba toda la cola);
+  // solo se saltean los cambios posteriores del MISMO registro, para no aplicarlos fuera de orden.
+  const batch = syncQueue.filter((item) => !item.conflict);
+  const blockedKeys = new Set(syncQueue.filter((item) => item.conflict).map(syncItemKey));
+  let syncedCount = 0;
+  let problemCount = 0;
+  let stopMessage = "";
   try {
-    const results = [];
     for (const item of batch) {
-      results.push(await syncOneItem(item));
+      if (!syncQueue.includes(item)) continue;
+      const key = syncItemKey(item);
+      if (blockedKeys.has(key)) continue;
+      syncInFlightId = item.syncId;
+      const outcome = await syncOneItem(item);
+      syncInFlightId = "";
+      if (outcome.status === "ok") {
+        markSynced(item.syncId);
+        removeFromSyncQueue(item.syncId);
+        syncedCount += 1;
+        continue;
+      }
+      if (outcome.status === "transport" || outcome.status === "auth") {
+        stopMessage = outcome.message;
+        break;
+      }
+      if (outcome.status === "conflict" && item.auto) {
+        const record = localRecordForSyncItem(item);
+        if (record && record._syncId === item.syncId) record._syncStatus = undefined;
+        removeFromSyncQueue(item.syncId);
+        continue;
+      }
+      item.attempts = (item.attempts || 0) + 1;
+      item.lastError = outcome.message || "Error desconocido";
+      if (outcome.status === "conflict") item.conflict = true;
+      blockedKeys.add(key);
+      problemCount += 1;
+      saveSyncQueue();
     }
-    const syncedIds = new Set(results.flatMap((result) => (result.synced || []).map((item) => item.syncId)));
-    syncedIds.forEach(markSynced);
-    syncQueue = syncQueue.filter((item) => !syncedIds.has(item.syncId));
-    await pullRemoteData();
+    if (!stopMessage) await pullRemoteData();
     saveSyncQueue();
     saveData();
-    showToast(syncedIds.size ? "Sincronizacion completa" : "Datos actualizados desde Sheets");
+    if (stopMessage) showToast(`No se pudo sincronizar: ${stopMessage}`);
+    else if (problemCount) showToast(`${problemCount} carga${problemCount === 1 ? "" : "s"} con problemas: revisá Sincronización`);
+    else showToast(syncedCount ? "Sincronizacion completa" : "Datos actualizados desde Sheets");
   } catch (error) {
     showToast(`No se pudo sincronizar: ${error.message || "queda pendiente"}`);
   } finally {
+    syncInFlightId = "";
     syncRunning = false;
     renderSyncStatus();
     renderAll();
   }
+  if (!stopMessage) processPhotoUploads();
+  // Lo que se cargó mientras se sincronizaba sale en una vuelta más (con tope, por si algo se vuelve a encolar solo).
+  const leftover = syncQueue.some((item) => !item.conflict && !item.lastError);
+  if (!stopMessage && leftover && navigator.onLine !== false) {
+    syncFollowUps += 1;
+    if (syncFollowUps <= 3) window.setTimeout(syncPending, 400);
+  } else {
+    syncFollowUps = 0;
+  }
+}
+let syncFollowUps = 0;
+
+// Devuelve { status: "ok" | "conflict" | "error" | "transport" | "auth", message }.
+function interpretSyncResult(item, result) {
+  if (!result) return { status: "transport", message: "Respuesta vacía de Apps Script" };
+  if (result.ok === false) {
+    const message = result.error || "No se pudo sincronizar";
+    if (syncFailureIsGlobal(message)) return { status: "auth", message };
+    if (/modificado desde otro dispositivo/i.test(message)) return { status: "conflict", message };
+    return { status: "error", message };
+  }
+  const conflict = (result.conflicts || []).find((entry) => entry.syncId === item.syncId);
+  if (conflict) return { status: "conflict", message: conflict.error || "Modificado en la planilla" };
+  const failed = (result.failed || []).find((entry) => entry.syncId === item.syncId);
+  if (failed) return { status: "error", message: failed.error || "No se pudo guardar" };
+  return { status: "ok" };
 }
 
 async function syncOneItem(item) {
+  const body = JSON.stringify({ source: "gestion-agro", key: syncConfig.apiKey || "", items: [item] });
+  let result;
   try {
     const response = await fetch(syncConfig.apiUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ source: "gestion-agro", key: syncConfig.apiKey || "", items: [item] })
+      body
     });
-    const result = await response.json();
-    if (!response.ok || result.ok === false) throw new Error(result.error || "No se pudo sincronizar");
-    return result;
+    result = await response.json();
   } catch {
+    // No se pudo leer la respuesta. Un registro grande no entra en la dirección web del método alternativo:
+    // se verifica leyendo la planilla si llegó igual.
     if (isLargeSyncItem(item)) {
-      await wait(1800);
-      const result = await pullRemoteData();
-      if (remoteContainsSyncItem(result.data || {}, item)) return { ok: true, synced: [{ syncId: item.syncId }] };
-      throw new Error("No se pudo confirmar el monitoreo con fotos. Queda pendiente.");
+      try {
+        await wait(1800);
+        const read = await pullRemoteData();
+        if (remoteContainsSyncItem(read.data || {}, item)) return { status: "ok" };
+      } catch (error) {
+        return { status: "transport", message: error.message || "Sin conexión con Apps Script" };
+      }
+      return { status: "transport", message: "No se pudo confirmar el envío de un registro grande. Queda pendiente." };
     }
-    return syncOneItemJsonp(item);
+    try {
+      result = await syncOneItemJsonp(item);
+    } catch (error) {
+      return { status: "transport", message: error.message || "Sin conexión con Apps Script" };
+    }
   }
+  return interpretSyncResult(item, result);
 }
 
 function isLargeSyncItem(item) {
-  return item?.table === "monitors" && String(item.record?.photo || "").length > 12000;
+  return JSON.stringify(item?.record || {}).length > 6000;
 }
 
 function remoteContainsSyncItem(remote, item) {
   const rows = Array.isArray(remote?.[item.table]) ? remote[item.table] : [];
   const key = recordMergeKey(item.table, item.record);
-  return rows.some((row) => recordMergeKey(item.table, row) === key && (!item.record?.updatedAt || row.updatedAt === item.record.updatedAt || row.photo));
+  return rows.some((row) => recordMergeKey(item.table, row) === key && (!item.record?.updatedAt || row.updatedAt === item.record.updatedAt));
 }
 
 function wait(ms) {
@@ -370,10 +582,6 @@ function syncOneItemJsonp(item) {
 
     window[callbackName] = (result) => {
       cleanup();
-      if (!result || result.ok === false) {
-        reject(new Error(result?.error || "No se pudo sincronizar"));
-        return;
-      }
       resolve(result);
     };
 
@@ -412,7 +620,7 @@ function pullRemoteData() {
         reject(new Error("Apps Script necesita actualizarse para leer datos"));
         return;
       }
-      mergeRemoteData(result.data || {});
+      mergeRemoteData(result.data || {}, result.missing || []);
       resolve(result);
     };
 
@@ -425,35 +633,52 @@ function pullRemoteData() {
   });
 }
 
-function mergeRemoteData(remote) {
+// Trae la planilla al celular. Protecciones: si una tabla no vino (pestaña renombrada o borrada) o vino vacía
+// mientras el celular tiene registros ya sincronizados, NO se borra nada local y se avisa.
+function mergeRemoteData(remote, missingTables = []) {
   averageCostVersion += 1;
   const tables = ["lots", "products", "orders", "monitors", "applications", "closures", "vouchers"];
-  if (!Array.isArray(remote.vouchers)) tables.pop();
+  const skipped = [];
   tables.forEach((table) => {
-    const rows = Array.isArray(remote[table]) ? remote[table] : [];
+    if (!Array.isArray(remote[table])) {
+      if (table !== "vouchers") skipped.push(table);
+      return;
+    }
+    const rows = remote[table].filter((row) => row && row.id);
     const current = Array.isArray(data[table]) ? data[table] : [];
-    const remoteKeys = new Set(rows.filter((row) => row?.id).map((row) => recordMergeKey(table, row)));
+    const isPending = (item) => item?._syncStatus === "pending" || item?._syncStatus === "delete-pending";
+    const syncedLocal = current.filter((item) => item?.id && !isPending(item)).length;
+    if (missingTables.includes(table) || (!rows.length && syncedLocal >= 3)) {
+      if (table !== "vouchers") skipped.push(table);
+      return;
+    }
+    const remoteKeys = new Set(rows.map((row) => recordMergeKey(table, row)));
+    const indexByKey = new Map(current.map((item, index) => [recordMergeKey(table, item), index]));
     rows.forEach((row) => {
-      if (!row || !row.id) return;
       const key = recordMergeKey(table, row);
-      const index = current.findIndex((item) => recordMergeKey(table, item) === key);
-      const cleanRow = { ...row };
+      const index = indexByKey.has(key) ? indexByKey.get(key) : -1;
+      const cleanRow = { ...row, _remoteUpdatedAt: String(row.updatedAt || "") };
       if (index >= 0) {
-        if (current[index]._syncStatus === "pending" || current[index]._syncStatus === "delete-pending") return;
+        if (isPending(current[index])) return;
         current[index] = { ...current[index], ...cleanRow, _syncStatus: undefined, _syncId: undefined, _syncAction: undefined };
       } else {
+        indexByKey.set(key, current.length);
         current.push(cleanRow);
       }
     });
     const filtered = current.filter((item) => {
       if (!item?.id) return false;
-      if (item._syncStatus === "pending" || item._syncStatus === "delete-pending") return true;
+      if (isPending(item)) return true;
       return remoteKeys.has(recordMergeKey(table, item));
     });
     data[table] = table === "applications" ? uniqueApplicationRows(filtered) : table === "vouchers" ? filtered.map(parseVoucherRecord) : filtered;
   });
   normalizeCampaignRecords(data);
   data.products.forEach(recalculateApplicationsForProduct);
+  if (skipped.length) {
+    const names = skipped.map(syncTableLabel).join(", ");
+    window.setTimeout(() => showToast(`La planilla no devolvió: ${names}. No se borró nada de este celular; revisá las pestañas.`), 2000);
+  }
 }
 
 function recordMergeKey(table, row) {
@@ -560,13 +785,63 @@ function normalizeWarehouseKey(warehouse) {
     .trim();
 }
 
+// ===== Caché de cálculos derivados =====
+// Stock, grupos de productos y remitos se recalculaban miles de veces por pantalla (renderAll tardaba ~8 s con
+// los datos reales). Se calculan una vez por versión de los datos: la versión cambia al guardar, al leer la planilla
+// y al empezar cada renderAll, así que nunca se muestra un valor viejo.
+let derivedCache = null;
+function derivedData() {
+  const key = averageCostCacheKey();
+  if (derivedCache && derivedCache.key === key) return derivedCache;
+  const groups = new Map();
+  const productsById = new Map();
+  data.products.forEach((item) => {
+    productsById.set(item.id, item);
+    const groupKey = productStockKey(item);
+    if (!groups.has(groupKey)) groups.set(groupKey, []);
+    groups.get(groupKey).push(item);
+  });
+  derivedCache = { key, groups, productsById, groupMeta: new Map(), stock: new Map(), uniqueApplications: null, applicationsByGroup: new Map() };
+  return derivedCache;
+}
+
 function productGroupProducts(product) {
   const key = productStockKey(product);
   if (!key) return product ? [product] : [];
-  return data.products.filter((item) => productStockKey(item) === key);
+  return derivedData().groups.get(key) || [];
 }
 
-function receiptEntriesForProduct(product) {
+function productGroupMeta(product) {
+  const cache = derivedData();
+  const key = productStockKey(product);
+  if (!cache.groupMeta.has(key)) {
+    const group = productGroupProducts(product);
+    cache.groupMeta.set(key, {
+      ids: new Set(group.map((item) => item.id)),
+      names: new Set(group.map((item) => normalizeName(item.name)).filter(Boolean))
+    });
+  }
+  return cache.groupMeta.get(key);
+}
+
+function cachedUniqueApplications() {
+  const cache = derivedData();
+  if (!cache.uniqueApplications) cache.uniqueApplications = uniqueApplicationRows(data.applications);
+  return cache.uniqueApplications;
+}
+
+function applicationsForProductGroup(product) {
+  const cache = derivedData();
+  const key = productStockKey(product) || product?.id || "";
+  if (!cache.applicationsByGroup.has(key)) {
+    cache.applicationsByGroup.set(key, cachedUniqueApplications().filter((application) => productMatchesApplication(product, application)));
+  }
+  return cache.applicationsByGroup.get(key);
+}
+
+const receiptParseCache = new Map();
+
+function parseReceiptEntries(product) {
   return String(receiptText(product) || "").split(/\r?\n/).flatMap((line) => {
     const value = line.trim();
     if (!value) return [];
@@ -576,6 +851,19 @@ function receiptEntriesForProduct(product) {
     }
     return value.split(",").map((number) => ({ number: number.trim(), supplier: product?.supplier || "", detailed: false })).filter((entry) => entry.number);
   });
+}
+
+function receiptEntriesForProduct(product) {
+  const text = String(receiptText(product) || "");
+  if (!text) return [];
+  const cacheKey = `${text}${product?.supplier || ""}`;
+  let entries = receiptParseCache.get(cacheKey);
+  if (!entries) {
+    if (receiptParseCache.size > 2000) receiptParseCache.clear();
+    entries = parseReceiptEntries(product);
+    receiptParseCache.set(cacheKey, entries);
+  }
+  return entries.map((entry) => ({ ...entry }));
 }
 
 function receiptEntries(product) {
@@ -659,14 +947,16 @@ function weightedAverageCost(product, date) {
   const group = productGroupProducts(product);
   const receipts = group.flatMap((item) => {
     const entries = receiptEntriesForProduct(item).filter((entry) => entry.detailed && entry.date);
-    if (entries.length) return entries.map((entry) => ({ type: "in", date: entry.date, quantity: parseDecimal(entry.quantity), cost: parseDecimal(entry.unitCost) }));
+    const initial = initialStock(item);
+    const openingEvent = initial > 0 ? [{ type: "in", date: "", quantity: initial, cost: parseDecimal(item.unitCost) }] : [];
+    if (entries.length) return [...openingEvent, ...entries.map((entry) => ({ type: "in", date: entry.date, quantity: parseDecimal(entry.quantity), cost: parseDecimal(entry.unitCost) }))];
+    if (openingEvent.length) return openingEvent;
     const opening = parseDecimal(item.quantity);
     return opening > 0 ? [{ type: "in", date: "", quantity: opening, cost: parseDecimal(item.unitCost) }] : [];
   });
   let result = null;
   if (receipts.length) {
-    const consumptions = uniqueApplicationRows()
-      .filter((application) => productMatchesApplication(product, application))
+    const consumptions = applicationsForProductGroup(product)
       .filter((application) => {
         const order = orderById(application.orderId);
         return order ? order.status === "Finalizada" : !!application.id;
@@ -1067,7 +1357,7 @@ function ensureInlineClear(input, onClear) {
   const button = document.createElement("button");
   button.className = "field-clear-button";
   button.type = "button";
-  button.textContent = "?";
+  button.textContent = "×";
   button.title = "Borrar filtro";
   button.setAttribute("aria-label", "Borrar filtro");
   button.addEventListener("click", () => {
@@ -1150,7 +1440,7 @@ async function handleDepositProductSubmit(event) {
   const shared = formData(form);
   const lines = depositProductLines().map(depositLineValues).filter((line) => line.name);
   if (!lines.length) {
-    showToast("Agreg? al menos un producto");
+    showToast("Agregá al menos un producto");
     return;
   }
   if (!editingProductId && !String(shared.receiptNumber || "").trim()) {
@@ -1164,8 +1454,9 @@ async function handleDepositProductSubmit(event) {
 
   const receiptPhotoFile = form.elements.receiptPhotoFile?.files?.[0];
   const receiptPhoto = receiptPhotoFile ? await readImageAsDataUrl(receiptPhotoFile, 960, 36000) : "";
+  const receiptPhotoFull = receiptPhotoFile ? await readImageAsDataUrl(receiptPhotoFile, 1600, 3000000) : "";
   if (receiptPhotoFile && !receiptPhoto) {
-    showToast("No se pudo procesar la foto del remito. Prob? elegirla nuevamente.");
+    showToast("No se pudo procesar la foto del remito. Probá elegirla nuevamente.");
     return;
   }
   const wasEditing = Boolean(editingProductId);
@@ -1177,6 +1468,10 @@ async function handleDepositProductSubmit(event) {
     return;
   }
   const toUsd = (value) => currency === "ARS" ? parseDecimal(value) / fxRate : parseDecimal(value);
+  if (!editingProductId) {
+    const duplicates = possibleDuplicatePurchases(lines, shared, toUsd);
+    if (duplicates.length && !window.confirm(`Posible compra repetida:\n\n${duplicates.join("\n")}\n\n¿Es otra compra distinta y querés guardarla igual?`)) return;
+  }
   const voucher = editingProductId ? null : (() => {
     const totals = voucherTotalsFromForm(form);
     return parseVoucherRecord({
@@ -1192,7 +1487,7 @@ async function handleDepositProductSubmit(event) {
       ? data.products.find((product) => product.id === editingProductId)
       : findDepositProductMatch(values);
     if (!editingProductId && existing && shared.receiptNumber && hasReceiptNumber(existing, shared.receiptNumber)) {
-      showToast(`El remito ${shared.receiptNumber} ya est? cargado para ${line.name}`);
+      showToast(`El remito ${shared.receiptNumber} ya está cargado para ${line.name}`);
       return;
     }
     const receiptNumbers = editingProductId
@@ -1213,6 +1508,12 @@ async function handleDepositProductSubmit(event) {
     };
     delete record.calculatedStock;
     delete record.applicationUse;
+    // Al corregir el "Stock físico total" de un insumo, la diferencia con las compras queda como stock inicial
+    // (columna stock_inicial), que es lo que se guarda en la planilla. Antes el cambio no llegaba a la planilla.
+    if (editingProductId && existing) {
+      const entered = parseDecimal(line.quantity);
+      if (Math.abs(entered - baseStock(existing)) > 0.0001) record.initialStock = Math.round((entered - receiptQuantityTotal(existing)) * 10000) / 10000;
+    }
     if (existing) {
       const index = data.products.findIndex((product) => product.id === existing.id);
       if (index >= 0) data.products[index] = record;
@@ -1231,6 +1532,7 @@ async function handleDepositProductSubmit(event) {
     queueSyncVoucher(voucher);
   }
   saveData();
+  if (receiptPhotoFull) await queuePhotoUploads(voucher ? "vouchers" : "products", voucher ? voucher.id : changed[0]?.id, [receiptPhotoFull]);
   editingProductId = "";
   resetForm(form);
   resetDepositProductLines();
@@ -1276,7 +1578,7 @@ function renderVouchers() {
       <td>${money(voucher, voucher.net)}</td>
       <td>${money(voucher, voucher.total)}</td>
       <td>${escapeHtml(voucher.dueDate ? formatDateValue(voucher.dueDate) : "")}</td>
-      <td>${voucher.type === "Remito" ? `<button class="link-button" type="button" data-convert-voucher="${escapeHtml(voucher.id)}">Convertir en factura</button><br>` : `${escapeHtml(voucher.status || "")}${voucher.status ? "<br>" : ""}`}${voucher.fxRate ? `<span class="muted">TC ${escapeHtml(String(voucher.fxRate).replace(".", ","))}</span><br>` : ""}<button class="link-button" type="button" data-edit-voucher="${escapeHtml(voucher.id)}">Corregir datos</button></td>
+      <td>${voucher.type === "Remito" ? `<button class="link-button" type="button" data-convert-voucher="${escapeHtml(voucher.id)}">Convertir en factura</button><br>` : `${escapeHtml(voucher.status || "")}${voucher.status ? "<br>" : ""}`}${voucher.fxRate ? `<span class="muted">TC ${escapeHtml(String(voucher.fxRate).replace(".", ","))}</span><br>` : ""}<button class="link-button" type="button" data-edit-voucher="${escapeHtml(voucher.id)}">Corregir datos</button>${driveLinksHtml(voucher, "Foto")}</td>
     </tr>`).join("") : `<tr><td colspan="9" class="muted">Todavía no hay comprobantes cargados con el formulario nuevo.</td></tr>`;
   body.querySelectorAll("[data-convert-voucher]").forEach((button) => button.addEventListener("click", () => openVoucherConversion(button.dataset.convertVoucher)));
   body.querySelectorAll("[data-edit-voucher]").forEach((button) => button.addEventListener("click", () => openVoucherEdit(button.dataset.editVoucher)));
@@ -1499,11 +1801,11 @@ function polygonForLot(lot) {
 }
 
 function productName(id) {
-  return data.products.find((product) => product.id === id)?.name || "Sin producto";
+  return derivedData().productsById.get(id)?.name || "Sin producto";
 }
 
 function productType(id) {
-  return data.products.find((product) => product.id === id)?.type || "Otros";
+  return derivedData().productsById.get(id)?.type || "Otros";
 }
 
 function orderById(id) {
@@ -1520,10 +1822,8 @@ function orderShortLabel(orderOrId) {
 }
 
 function productMatchesApplication(product, application) {
-  const group = productGroupProducts(product);
-  const groupIds = new Set(group.map((item) => item.id));
+  const { ids: groupIds, names: groupNames } = productGroupMeta(product);
   if (application.productId && groupIds.has(application.productId)) return true;
-  const groupNames = new Set(group.map((item) => normalizeName(item.name)).filter(Boolean));
   const applicationNames = [
     application.productName,
     productName(application.productId)
@@ -1531,10 +1831,19 @@ function productMatchesApplication(product, application) {
   return applicationNames.some((name) => groupNames.has(name));
 }
 
+// Stock inicial: columna stock_inicial de la planilla (existencia antes de empezar a cargar compras en la app).
+function initialStock(product) {
+  const value = product?.initialStock;
+  return value === undefined || value === null || value === "" ? 0 : parseDecimal(value);
+}
+
 function baseStock(product) {
   const detailedReceiptTotal = receiptQuantityTotal(product);
   if (receiptEntriesForProduct(product).some((entry) => entry.detailed)) {
-    return detailedReceiptTotal;
+    return initialStock(product) + detailedReceiptTotal;
+  }
+  if (product?.initialStock !== undefined && product?.initialStock !== null && product?.initialStock !== "") {
+    return initialStock(product);
   }
   if (product?.quantity !== undefined && product?.quantity !== null && product?.quantity !== "") {
     return parseDecimal(product.quantity);
@@ -1568,8 +1877,17 @@ function cleanStockValue(value) {
 }
 
 function stockForProduct(product) {
+  const cache = derivedData();
+  const cacheKey = productStockKey(product) || product?.id || "";
+  if (cache.stock.has(cacheKey)) return { ...cache.stock.get(cacheKey) };
+  const result = computeStockForProduct(product);
+  cache.stock.set(cacheKey, result);
+  return { ...result };
+}
+
+function computeStockForProduct(product) {
   const base = productGroupProducts(product).reduce((sum, item) => sum + baseStock(item), 0);
-  const movements = uniqueApplicationRows().filter((application) => productMatchesApplication(product, application));
+  const movements = applicationsForProductGroup(product);
   const totals = movements.reduce((acc, application) => {
     const order = orderById(application.orderId);
     const quantity = applicationQuantity(application);
@@ -1862,7 +2180,10 @@ async function readMonitorPhotos(input) {
   let skipped = 0;
   for (const file of files) {
     const photo = await readImageAsDataUrl(file, 520, 11500) || await readImageAsDataUrl(file, 360, 9000);
-    if (photo) photos.push(photo);
+    if (photo) {
+      photos.push(photo);
+      await rememberFullPhoto(file, photo);
+    }
     else skipped += 1;
   }
   if (skipped) showToast(`${skipped} foto${skipped === 1 ? "" : "s"} no se pudieron procesar. Se guardan las demás.`);
@@ -1876,10 +2197,10 @@ function uniqueSorted(values) {
 
 function taskOptions() {
   const defaults = [
-    "Pulverizaci?n",
+    "Pulverización",
     "Siembra",
     "Resiembra",
-    "Fertilizaci?n",
+    "Fertilización",
     "Disco",
     "Rastra",
     "Monitoreo",
@@ -1890,8 +2211,20 @@ function taskOptions() {
   return uniqueSorted([...defaults, ...data.orders.map((order) => order.task)]);
 }
 
+// Nombres de contratistas unificados con la app de administración: si se escribe el nombre viejo, se guarda el nuevo.
+const CONTRACTOR_ALIASES = {
+  "muller hermanos": "Muller Franco Ariel y Muller Emiliano Andrés S.H. (Muller Hermanos)",
+  "muller franco ariel y muller emiliano andres s.h.": "Muller Franco Ariel y Muller Emiliano Andrés S.H. (Muller Hermanos)",
+  "muller emiliano y muller franco sh": "Muller Franco Ariel y Muller Emiliano Andrés S.H. (Muller Hermanos)"
+};
+
+function canonicalContractorName(name) {
+  const clean = String(name || "").trim();
+  return CONTRACTOR_ALIASES[normalizeName(clean).replace(/\s+/g, " ")] || clean;
+}
+
 function contractorOptions() {
-  return uniqueSorted(data.orders.map((order) => order.owner));
+  return uniqueSorted(data.orders.map((order) => canonicalContractorName(order.owner)));
 }
 
 function renderDashboard() {
@@ -1901,61 +2234,91 @@ function renderDashboard() {
 function renderDashboardAlerts() {
   renderOperationalAlerts();
   renderPaymentAlerts();
+  renderDataAlerts();
+}
+
+// Tarjeta de alerta: líneas clicables (data-dashboard-*) y como máximo 8 visibles, con "y N más".
+function alertCard(title, value, lines, emptyText = "Sin alertas", tone = "") {
+  const visible = lines.slice(0, 8).join("");
+  const more = lines.length > 8 ? `<div class="alert-line muted">y ${lines.length - 8} más…</div>` : "";
+  return `
+    <article class="alert-card ${tone}">
+      <span>${title}</span>
+      <strong>${value}</strong>
+      <div class="alert-detail">${visible ? visible + more : `<span class="muted">${emptyText}</span>`}</div>
+    </article>`;
+}
+
+function bindDashboardLinks(container) {
+  container.querySelectorAll("[data-dashboard-order]").forEach((item) => {
+    item.addEventListener("click", () => openOrderDetail(item.dataset.dashboardOrder, "dashboard"));
+  });
+  container.querySelectorAll("[data-dashboard-product]").forEach((item) => {
+    item.addEventListener("click", () => {
+      selectedProductId = item.dataset.dashboardProduct;
+      editingReceiptIndex = -1;
+      renderProductDetail();
+      switchView("ficha-deposito");
+    });
+  });
+  container.querySelectorAll("[data-dashboard-voucher]").forEach((item) => {
+    item.addEventListener("click", () => {
+      switchView("stock");
+      const target = document.querySelector("#vouchersTable");
+      target?.closest(".panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+  container.querySelectorAll("[data-dashboard-lot]").forEach((item) => {
+    item.addEventListener("click", () => openLotDetail(item.dataset.dashboardLot));
+  });
+}
+
+// Stock mínimo del insumo (columna stock_minimo). Si el mismo insumo está en varios depósitos, vale el mayor.
+function productMinStock(product) {
+  return productGroupProducts(product).reduce((max, item) => Math.max(max, parseDecimal(item.minStock)), 0);
 }
 
 function renderOperationalAlerts() {
   const pendingOrders = data.orders
     .filter((order) => order.status === "Pendiente" || order.status === "En curso")
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  const negativeStock = data.products
+  const products = displayProducts();
+  const negativeStock = products
     .filter((product) => stockForProduct(product).available < 0)
     .sort((a, b) => stockForProduct(a).available - stockForProduct(b).available);
+  const belowMinimum = products
+    .filter((product) => {
+      const minimum = productMinStock(product);
+      const available = stockForProduct(product).available;
+      return minimum > 0 && available >= 0 && available < minimum;
+    })
+    .sort((a, b) => stockForProduct(a).available / productMinStock(a) - stockForProduct(b).available / productMinStock(b));
   const staleLots = lotsWithoutRecentMonitoring(15);
+  const target = document.querySelector("#dashboardOperationalAlerts");
 
-  const cards = [
-    {
-      title: "ordenes pendientes",
-      value: pendingOrders.length,
-      detail: pendingOrders.map((item) => `
-        <div class="alert-line clickable-alert" data-dashboard-order="${item.id}">
-          <b>${dateShort(item.date)} ? ${lotName(item.lotId)}</b>
-          <span>${item.task} ? ${number(item.plannedHectares || 0, 2)} ha ? ${item.owner || "-"}</span>
-        </div>
-      `).join("")
-    },
-    {
-      title: "Stock negativo",
-      value: negativeStock.length,
-      detail: negativeStock.map((item) => `
-        <div class="alert-line">
-          <b>${item.name}</b>
-          <span>Disponible ${number(stockForProduct(item).available, 2)} ${item.unit} ? reservado ${number(stockForProduct(item).reserved, 2)} ${item.unit} ? ${item.warehouse || "-"}</span>
-        </div>
-      `).join("")
-    },
-    {
-      title: "Sin monitoreo 15 d?as",
-      value: staleLots.length,
-      detail: staleLots.map((item) => `
-        <div class="alert-line">
-          <b>${displayLotName(item.lot)} ? ${item.lot.farm}</b>
-          <span>Ultimo monitoreo: ${item.lastDate ? dateShort(item.lastDate) : "sin registro"} - ${number(item.lot.hectares, 2)} ha</span>
-        </div>
-      `).join("")
-    }
-  ];
-
-  document.querySelector("#dashboardOperationalAlerts").innerHTML = cards.map((card) => `
-    <article class="alert-card">
-      <span>${card.title}</span>
-      <strong>${card.value}</strong>
-      <div class="alert-detail">${card.detail || "Sin alertas"}</div>
-    </article>
-  `).join("");
-
-  document.querySelectorAll("[data-dashboard-order]").forEach((item) => {
-    item.addEventListener("click", () => openOrderDetail(item.dataset.dashboardOrder, "dashboard"));
-  });
+  target.innerHTML = [
+    alertCard("Órdenes pendientes", pendingOrders.length, pendingOrders.map((item) => `
+      <div class="alert-line clickable-alert" data-dashboard-order="${escapeHtml(item.id)}">
+        <b>${dateShort(item.date)} · ${escapeHtml(lotName(item.lotId))}</b>
+        <span>${escapeHtml(item.task)} · ${number(item.plannedHectares || 0, 2)} ha · ${escapeHtml(item.owner || "-")}</span>
+      </div>`), "Sin órdenes pendientes"),
+    alertCard("Stock negativo", negativeStock.length, negativeStock.map((item) => `
+      <div class="alert-line clickable-alert" data-dashboard-product="${escapeHtml(item.id)}">
+        <b>${escapeHtml(item.name)}</b>
+        <span>Disponible ${number(stockForProduct(item).available, 2)} ${escapeHtml(item.unit)} · falta cargar una compra o el stock inicial</span>
+      </div>`), "Sin stock negativo", negativeStock.length ? "warn" : ""),
+    alertCard("Bajo el stock mínimo", belowMinimum.length, belowMinimum.map((item) => `
+      <div class="alert-line clickable-alert" data-dashboard-product="${escapeHtml(item.id)}">
+        <b>${escapeHtml(item.name)}</b>
+        <span>Disponible ${number(stockForProduct(item).available, 2)} de un mínimo de ${number(productMinStock(item), 2)} ${escapeHtml(item.unit)}</span>
+      </div>`), products.some((item) => productMinStock(item) > 0) ? "Todo por encima del mínimo" : "Cargá el stock mínimo en la ficha de cada insumo", belowMinimum.length ? "warn" : ""),
+    alertCard("Sin monitoreo 15 días", staleLots.length, staleLots.map((item) => `
+      <div class="alert-line clickable-alert" data-dashboard-lot="${escapeHtml(item.lot.id)}">
+        <b>${escapeHtml(displayLotName(item.lot))} · ${escapeHtml(item.lot.farm)}</b>
+        <span>Último monitoreo: ${item.lastDate ? dateShort(item.lastDate) : "sin registro"} · ${number(item.lot.hectares, 2)} ha</span>
+      </div>`), "Todos los lotes monitoreados")
+  ].join("");
+  bindDashboardLinks(target);
 }
 
 function lotsWithoutRecentMonitoring(days) {
@@ -1972,28 +2335,90 @@ function lotsWithoutRecentMonitoring(days) {
   }).filter((item) => item.isStale);
 }
 
+function voucherDaysToDue(voucher) {
+  if (!voucher?.dueDate) return null;
+  const due = new Date(`${String(voucher.dueDate).slice(0, 10)}T00:00:00`);
+  const today = new Date(`${todayValue()}T00:00:00`);
+  return Math.round((due - today) / 864e5);
+}
+
+function voucherAmountText(vouchers) {
+  const totals = vouchers.reduce((acc, voucher) => {
+    const currency = voucher.currency === "ARS" ? "ARS" : "USD";
+    acc[currency] = (acc[currency] || 0) + parseDecimal(voucher.total);
+    return acc;
+  }, {});
+  const format = (value) => value.toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const parts = [];
+  if (totals.USD) parts.push(`US$ ${format(totals.USD)}`);
+  if (totals.ARS) parts.push(`$ ${format(totals.ARS)}`);
+  return parts.join(" + ") || "0";
+}
+
+function voucherLine(voucher, extra) {
+  const amount = `${voucher.currency === "ARS" ? "$" : "US$"} ${parseDecimal(voucher.total).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
+  return `
+    <div class="alert-line clickable-alert" data-dashboard-voucher="${escapeHtml(voucher.id)}">
+      <b>${escapeHtml(extra)} · ${escapeHtml(voucher.supplier || "-")}</b>
+      <span>${escapeHtml(voucher.type || "")} ${escapeHtml(voucher.number || "")} · ${amount}${voucher.partner ? ` · aporte ${escapeHtml(voucher.partner)}` : ""}</span>
+    </div>`;
+}
+
 function renderPaymentAlerts() {
-  const movements = data.stockMovements || [];
-  const purchases = data.purchases || [];
-  const withoutInvoice = movements.filter((movement) => movement.movementType === "Ingreso" && !movement.invoiceNumber);
-  const withoutPrice = movements.filter((movement) => movement.movementType === "Ingreso" && !movement.netUnitCost);
-  const dueSoon = purchases.filter((purchase) => purchase.paymentStatus === "Por vencer");
-  const overdue = purchases.filter((purchase) => purchase.paymentStatus === "Vencida");
+  const vouchers = (data.vouchers || []).filter((voucher) => voucher.type !== "Sin comprobante");
+  const withDays = vouchers.map((voucher) => ({ voucher, days: voucherDaysToDue(voucher) })).filter((item) => item.days !== null);
+  const byDue = (a, b) => a.days - b.days;
+  const overdue = withDays.filter((item) => item.days < 0 && item.days >= -60).sort(byDue);
+  const week = withDays.filter((item) => item.days >= 0 && item.days <= 7).sort(byDue);
+  const month = withDays.filter((item) => item.days > 7 && item.days <= 30).sort(byDue);
+  const pendingInvoice = vouchers
+    .filter((voucher) => voucher.type === "Remito" && voucher.status !== "Facturado")
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const dueText = (item) => item.days === 0 ? "Vence hoy" : item.days < 0 ? `Venció hace ${-item.days} día${item.days === -1 ? "" : "s"}` : `${dateShort(item.voucher.dueDate)} (en ${item.days} día${item.days === 1 ? "" : "s"})`;
+  const target = document.querySelector("#dashboardPaymentAlerts");
+  const noVouchers = !vouchers.length ? "Todavía no hay comprobantes cargados con el formulario de ingreso" : "";
 
-  const cards = [
-    { title: "Ingresos sin factura", value: withoutInvoice.length, detail: withoutInvoice.slice(0, 3).map((item) => `${dateShort(item.date)} ? ${item.store || "-"} ? ${item.productName || item.productId}`).join("<br>") },
-    { title: "Sin precio", value: withoutPrice.length, detail: withoutPrice.slice(0, 3).map((item) => `${item.productName || item.productId} ? ${number(item.quantity, 2)} ${item.unit}`).join("<br>") },
-    { title: "Por vencer", value: money(dueSoon.reduce((sum, item) => sum + item.totalAmount, 0)), detail: dueSoon.slice(0, 3).map((item) => `${dateShort(item.dueDate)} ? ${item.store || "-"} ? ${item.invoiceNumber || "-"}`).join("<br>") },
-    { title: "Vencido", value: money(overdue.reduce((sum, item) => sum + item.totalAmount, 0)), detail: overdue.slice(0, 3).map((item) => `${dateShort(item.dueDate)} ? ${item.store || "-"} ? ${item.invoiceNumber || "-"}`).join("<br>") }
-  ];
+  target.innerHTML = [
+    alertCard("Vencidos (últimos 60 días)", voucherAmountText(overdue.map((item) => item.voucher)), overdue.map((item) => voucherLine(item.voucher, dueText(item))), noVouchers || "Nada vencido", overdue.length ? "bad" : ""),
+    alertCard("Vencen en 7 días", voucherAmountText(week.map((item) => item.voucher)), week.map((item) => voucherLine(item.voucher, dueText(item))), noVouchers || "Nada en los próximos 7 días", week.length ? "warn" : ""),
+    alertCard("Vencen en 8 a 30 días", voucherAmountText(month.map((item) => item.voucher)), month.map((item) => voucherLine(item.voucher, dueText(item))), noVouchers || "Nada en el mes"),
+    alertCard("Remitos sin factura", pendingInvoice.length, pendingInvoice.map((voucher) => {
+      const age = Math.round((new Date(`${todayValue()}T00:00:00`) - new Date(`${String(voucher.date).slice(0, 10)}T00:00:00`)) / 864e5);
+      return voucherLine(voucher, `${dateShort(voucher.date)} (hace ${age} días)`);
+    }), noVouchers || "Todos los remitos tienen factura")
+  ].join("");
+  bindDashboardLinks(target);
+}
 
-  document.querySelector("#dashboardPaymentAlerts").innerHTML = cards.map((card) => `
-    <article class="alert-card">
-      <span>${card.title}</span>
-      <strong>${card.value}</strong>
-      <p>${card.detail || "Sin alertas"}</p>
-    </article>
-  `).join("");
+function renderDataAlerts() {
+  const target = document.querySelector("#dashboardDataAlerts");
+  if (!target) return;
+  const active = data.orders.filter((order) => order.status !== "Cancelada");
+  const orderLine = (order, detail) => `
+    <div class="alert-line clickable-alert" data-dashboard-order="${escapeHtml(order.id)}">
+      <b>${dateShort(order.date)} · ${escapeHtml(lotName(order.lotId))}</b>
+      <span>${escapeHtml(order.task || "-")} · ${escapeHtml(detail)}</span>
+    </div>`;
+  const byDateDesc = (a, b) => String(b.date || "").localeCompare(String(a.date || ""));
+  const withoutLabor = active.filter((order) => !(laborCostForOrder(order) > 0)).sort(byDateDesc);
+  const withoutInputs = data.orders
+    .filter((order) => order.status === "Finalizada" && orderNeedsApplication(order) && !applicationsForOrder(order.id).length)
+    .sort(byDateDesc);
+  const withoutCompletion = data.orders.filter((order) => order.status === "Finalizada" && !order.completionDate).sort(byDateDesc);
+  const usedProducts = new Set(cachedUniqueApplications().map((application) => productStockKey(applicationProduct(application) || {})));
+  const withoutPrice = displayProducts().filter((product) => usedProducts.has(productStockKey(product)) && !(productDisplayUnitCost(product) > 0));
+
+  target.innerHTML = [
+    alertCard("Órdenes sin costo de labor", withoutLabor.length, withoutLabor.map((order) => orderLine(order, order.owner || "sin contratista")), "Todas tienen costo", withoutLabor.length ? "warn" : ""),
+    alertCard("Finalizadas sin insumos cargados", withoutInputs.length, withoutInputs.map((order) => orderLine(order, `${number(order.plannedHectares || 0, 2)} ha`)), "Todas tienen insumos", withoutInputs.length ? "warn" : ""),
+    alertCard("Finalizadas sin fecha real", withoutCompletion.length, withoutCompletion.map((order) => orderLine(order, "falta la fecha de finalización")), "Todas tienen fecha"),
+    alertCard("Insumos aplicados sin precio", withoutPrice.length, withoutPrice.map((product) => `
+      <div class="alert-line clickable-alert" data-dashboard-product="${escapeHtml(product.id)}">
+        <b>${escapeHtml(product.name)}</b>
+        <span>Sin costo unitario: sus aplicaciones suman u$s 0</span>
+      </div>`), "Todos tienen precio", withoutPrice.length ? "warn" : "")
+  ].join("");
+  bindDashboardLinks(target);
 }
 
 function renderLots() {
@@ -2078,11 +2503,11 @@ function renderMap(selectedPolygonId = data.mapPolygons?.[0]?.id) {
   const svg = document.querySelector("#lotMap");
   const detail = document.querySelector("#mapLotDetail");
   const polygons = data.mapPolygons || [];
-  document.querySelector("#mapCount").textContent = `${polygons.length} pol?gonos`;
+  document.querySelector("#mapCount").textContent = `${polygons.length} polígonos`;
 
   if (!polygons.length) {
-    svg.innerHTML = `<text x="450" y="280" text-anchor="middle">No hay pol?gonos cargados.</text>`;
-    detail.innerHTML = `<div class="empty">Seleccion? un pol?gono del mapa para ver su informaci?n.</div>`;
+    svg.innerHTML = `<text x="450" y="280" text-anchor="middle">No hay polígonos cargados.</text>`;
+    detail.innerHTML = `<div class="empty">Seleccioná un polígono del mapa para ver su información.</div>`;
     return;
   }
 
@@ -2132,7 +2557,7 @@ function renderMap(selectedPolygonId = data.mapPolygons?.[0]?.id) {
     return `
       <g class="map-lot" data-polygon-id="${polygon.id}" tabindex="0">
         <polygon class="${classes}" points="${pointsAttr}"></polygon>
-        <text x="${center[0].toFixed(1)}" y="${center[1].toFixed(1)}">${linkedLot?.name || polygon.name || `Pol?gono ${index + 1}`}</text>
+        <text x="${center[0].toFixed(1)}" y="${center[1].toFixed(1)}">${linkedLot?.name || polygon.name || `Polígono ${index + 1}`}</text>
       </g>
     `;
   }).join("")}</g>`;
@@ -2306,11 +2731,11 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
   if (!lot) {
     target.innerHTML = polygon ? `
       <div class="map-detail-body">
-        <strong>${polygon.name || "Pol?gono sin nombre"}</strong>
-        <span>No est? vinculado a un lote cargado.</span>
-        <span>Para vincularlo, el nombre del pol?gono en el KML debe coincidir con el nombre del lote.</span>
+        <strong>${polygon.name || "Polígono sin nombre"}</strong>
+        <span>No está vinculado a un lote cargado.</span>
+        <span>Para vincularlo, el nombre del polígono en el KML debe coincidir con el nombre del lote.</span>
       </div>
-    ` : `<div class="empty">Seleccion? un lote para ver su ficha.</div>`;
+    ` : `<div class="empty">Seleccioná un lote para ver su ficha.</div>`;
     return;
   }
 
@@ -2368,7 +2793,7 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
             <strong>${money(totalSpent)}</strong>
           </article>
           <article>
-            <span>Costo por hect?rea</span>
+            <span>Costo por hectárea</span>
             <strong>${money(totalSpentHa)}/ha</strong>
           </article>
         </div>
@@ -2460,7 +2885,7 @@ function buildOrderCosts(lotId) {
 function formatOrderCost(order, cost) {
   if (!cost || !cost.total) return "Costo: sin costo cargado";
   const hectares = cost.hectares || order.plannedHectares || 0;
-  return `Costo: ${money(cost.total)} ? ${money(hectares ? cost.total / hectares : 0)}/ha`;
+  return `Costo: ${money(cost.total)} · ${money(hectares ? cost.total / hectares : 0)}/ha`;
 }
 
 function applicationsForOrder(orderId) {
@@ -2493,7 +2918,7 @@ function parseKml(text) {
   if (xml.querySelector("parsererror")) throw new Error("No se pudo leer el KML.");
 
   return Array.from(xml.querySelectorAll("Placemark")).flatMap((placemark, index) => {
-    const name = placemark.querySelector("name")?.textContent?.trim() || `Pol?gono ${index + 1}`;
+    const name = placemark.querySelector("name")?.textContent?.trim() || `Polígono ${index + 1}`;
     const rings = Array.from(placemark.querySelectorAll("Polygon")).map((polygon) => {
       return polygon.querySelector("outerBoundaryIs LinearRing coordinates") || polygon.querySelector("coordinates");
     });
@@ -2543,7 +2968,7 @@ function renderOrders() {
       <tr class="clickable-row" data-open-order-detail="${order.id}">
         <td>${dateShort(order.date)}</td>
         <td><strong class="lot-cell">${lotName(order.lotId)}</strong></td>
-        <td>${order.task} <span class="muted-inline">${order.crop || lotCrop(order.lotId) || "-"} ? ${order.variety || lotVariety(order.lotId) || "-"}</span> ${syncBadge(order)}</td>
+        <td>${order.task} <span class="muted-inline">${order.crop || lotCrop(order.lotId) || "-"} · ${order.variety || lotVariety(order.lotId) || "-"}</span> ${syncBadge(order)}</td>
         <td>${number(order.plannedHectares || order.Hectareas_planificadas || 0, 2)}</td>
         <td>${order.owner || "-"}</td>
         <td>${statusBadge(order.status)}</td>
@@ -2872,7 +3297,7 @@ function openOrderDetail(orderId, backView = "ordenes") {
   orderDetailBackLotId = backView === "ficha-lote" ? order?.lotId || orderDetailBackLotId : "";
   const backButton = document.querySelector("#backFromOrderDetail");
   if (backButton) {
-    backButton.textContent = backView === "ficha-lote" ? "Volver al lote" : backView === "ficha-deposito" ? "Volver al insumo" : "Volver a ordenes";
+    backButton.textContent = backView === "ficha-lote" ? "Volver al lote" : backView === "ficha-deposito" ? "Volver al insumo" : backView === "contratistas" ? "Volver a contratistas" : backView === "dashboard" ? "Volver al panel" : "Volver a ordenes";
   }
   renderOrderDetail(orderId);
   switchView("ficha-orden");
@@ -2884,13 +3309,13 @@ function renderOrderDetail(orderId) {
 
   const order = orderById(orderId);
   if (!order) {
-    detail.innerHTML = `<div class="empty">No encontr? esa orden.</div>`;
+    detail.innerHTML = `<div class="empty">No encontré esa orden.</div>`;
     return;
   }
 
   const rows = applicationsForOrder(order.id);
   const applicationId = firstApplicationIdForOrder(order.id);
-  const productCost = rows.reduce((sum, row) => sum + Number(row.productCost || 0), 0);
+  const productCost = uniqueApplicationRows(rows).reduce((sum, row) => sum + applicationProductCost(row), 0);
   const laborCost = laborCostForOrder(order);
   const hectares = Number(order.plannedHectares || order.Hectareas_planificadas || rows[0]?.hectares || 0);
   const total = productCost + laborCost;
@@ -2899,7 +3324,7 @@ function renderOrderDetail(orderId) {
     <div class="map-detail-body">
       <div>
         <strong>${order.task}</strong>
-        <span>${dateShort(order.date)} ? ${lotName(order.lotId)} ? ${number(hectares, 2)} ha</span>
+        <span>${dateShort(order.date)} · ${lotName(order.lotId)} · ${number(hectares, 2)} ha</span>
       </div>
       <div class="map-kpis">
         <div><b>${statusBadge(order.status)}</b><span>Estado</span></div>
@@ -2917,6 +3342,8 @@ function renderOrderDetail(orderId) {
       </div>
       <div class="detail-actions">
         ${order.status !== "Finalizada" ? `<button class="link-button primary" data-finish-order="${order.id}">Finalizar orden</button>` : ""}
+        <button class="link-button primary" data-share-order="${order.id}" type="button">Enviar por WhatsApp</button>
+        <button class="link-button" data-copy-order="${order.id}" type="button">Copiar texto</button>
         <button class="link-button" data-edit-order="${order.id}">Editar orden</button>
         <button class="link-button danger" data-delete-order="${order.id}">Eliminar orden</button>
       </div>
@@ -2939,6 +3366,8 @@ function renderOrderDetail(orderId) {
   `;
 
   detail.querySelector("[data-edit-order]")?.addEventListener("click", () => editOrder(order.id));
+  detail.querySelector("[data-share-order]")?.addEventListener("click", () => shareOrder(order.id));
+  detail.querySelector("[data-copy-order]")?.addEventListener("click", () => shareOrder(order.id, "copy"));
   detail.querySelector("[data-delete-order]")?.addEventListener("click", () => deleteOrder(order.id));
   detail.querySelector("[data-finish-order]")?.addEventListener("click", () => finishOrder(order.id));
   detail.querySelector("[data-add-application]")?.addEventListener("click", () => openApplicationFormFromOrder(order.id));
@@ -3018,6 +3447,7 @@ function renderMonitorDetail(monitorId) {
       <p><b>Recomendacion</b><span>${monitor.recommendation || "-"}</span></p>
     </div>
     ${renderMonitorPhotoThumbs(monitor.photo, "monitor-photo-gallery")}
+    ${driveLinksHtml(monitor, "Foto")}
     <div class="detail-actions">
       <button class="link-button" data-edit-monitor="${monitor.id}">Editar</button>
       <button class="link-button danger" data-delete-monitor="${monitor.id}">Eliminar</button>
@@ -3131,7 +3561,7 @@ function renderApplicationDetail(applicationId) {
       <article>
         <span>Superficie</span>
         <strong>${number(first.hectares, 2)} ha</strong>
-        <small>${crop}${variety && variety !== "-" ? ` ? ${variety}` : ""}</small>
+        <small>${crop}${variety && variety !== "-" ? ` · ${variety}` : ""}</small>
       </article>
       <article>
         <span>Fecha</span>
@@ -3235,13 +3665,14 @@ function applicationOrderText(applicationId) {
     "Productos:"
   ];
   rows.forEach((row) => {
-    lines.push(`- ${row.productName || productName(row.productId)}: ${number(row.dose, 2)} dosis/ha - ${number(row.usedQuantity, 2)} total`);
+    lines.push(`- ${row.productName || productName(row.productId)}: ${number(row.dose, 2)} dosis/ha - ${number(applicationQuantity(row), 2)} total`);
   });
   return lines.join("\n");
 }
 
 async function copyApplicationOrder(applicationId) {
-  const text = applicationOrderText(applicationId);
+  const orderId = data.applications.find((application) => application.id === applicationId)?.orderId;
+  const text = orderById(orderId) ? orderShareText(orderId) : applicationOrderText(applicationId);
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
@@ -3410,7 +3841,7 @@ function deleteOrder(orderId) {
   const order = orderById(orderId);
   const linkedApplications = data.applications.filter((application) => application.orderId === orderId);
   const extra = linkedApplications.length ? `\n\nTambién se eliminarán ${linkedApplications.length} renglón(es) de aplicación vinculados y se devolverá el stock local.` : "";
-  if (!order || !window.confirm(`Eliminar la orden "${order.task}"?${extra}`)) return;
+  if (!order || !window.confirm(`¿Eliminar la orden "${order.task}"?${extra}`)) return;
   data.orders = data.orders.filter((item) => item.id !== orderId);
   linkedApplications.forEach((application) => {
     returnApplicationStock(application);
@@ -3447,7 +3878,7 @@ function editMonitor(monitorId) {
 
 function deleteMonitor(monitorId) {
   const monitor = data.monitors.find((item) => item.id === monitorId);
-  if (!monitor || !window.confirm(`Eliminar el monitoreo del ${dateShort(monitor.date)}?`)) return;
+  if (!monitor || !window.confirm(`¿Eliminar el monitoreo del ${dateShort(monitor.date)}?`)) return;
   data.monitors = data.monitors.filter((item) => item.id !== monitorId);
   selectedMonitorId = selectedMonitorId === monitorId ? "" : selectedMonitorId;
   queueSync("monitors", { ...monitor }, "delete");
@@ -3481,7 +3912,7 @@ function editApplication(key) {
 
 function deleteApplication(key) {
   const row = findApplicationByKey(key);
-  if (!row || !window.confirm(`Eliminar ${row.productName || productName(row.productId)} de ${row.id}?`)) return;
+  if (!row || !window.confirm(`¿Eliminar ${row.productName || productName(row.productId)} de ${row.id}?`)) return;
   returnApplicationStock(row);
   data.applications = data.applications.filter((item) => applicationKey(item) !== key);
   queueSync("applications", { ...row }, "delete");
@@ -3497,6 +3928,7 @@ function returnApplicationStock(application) {
 }
 
 function recalculateApplicationsForProduct(product) {
+  averageCostVersion += 1;
   data.applications.forEach((application) => {
     if (!productMatchesApplication(product, application)) return;
     const usedQuantity = applicationQuantity(application);
@@ -3512,7 +3944,7 @@ function recalculateApplicationsForProduct(product) {
       Math.abs(previousUnitCost - application.unitCost) > 0.005
       || Math.abs(previousProductCost - application.productCost) > 0.005
       || Math.abs(previousTotalCost - application.totalCost) > 0.005
-    ) queueSync("applications", application, "update");
+    ) queueSync("applications", application, "update", { auto: true });
   });
 }
 
@@ -3591,7 +4023,7 @@ function saveReceiptEdit(index) {
     editingReceiptIndex = -1;
     renderAll();
     renderProductDetail();
-    showToast("N?mero de remito actualizado");
+    showToast("Número de remito actualizado");
     return;
   }
   const nextQuantity = parseDecimal(values.quantity);
@@ -3622,7 +4054,7 @@ function deleteReceipt(index) {
   const detail = removed.detailed
     ? `Se restarán ${number(removed.quantity, 2)} ${product.unit || ""} del stock físico.`
     : "Es un antecedente sin cantidad discriminada: se quitará el número de remito sin modificar el stock.";
-  if (!window.confirm(`?Eliminar el remito ${removed.number}?\n\n${detail}`)) return;
+  if (!window.confirm(`¿Eliminar el remito ${removed.number}?\n\n${detail}`)) return;
   targetEntries.splice(removed.sourceIndex, 1);
   if (removed.detailed) targetProduct.quantity = baseStock(targetProduct) - parseDecimal(removed.quantity);
   targetProduct.receiptNumbers = serializeReceiptEntries(targetEntries);
@@ -3944,13 +4376,17 @@ function renderProductDetail() {
     <div class="application-detail-header">
       <div>
         <strong>${product.name}</strong>
-        <span>${product.type || "-"} ? ${warehouses.join(", ") || "-"}</span>
+        <span>${product.type || "-"} · ${warehouses.join(", ") || "-"}</span>
       </div>
       <div class="application-detail-kpis">
         <span>Fisico ${number(stock.physical, 2)} ${product.unit || ""}</span>
         <span>Reservado ${number(stock.reserved, 2)} ${product.unit || ""}</span>
         <span>Disponible ${number(stock.available, 2)} ${product.unit || ""}</span>
       </div>
+      <form class="min-stock-form" id="minStockForm">
+        <label>Stock mínimo <input name="minStock" type="text" inputmode="decimal" value="${productMinStock(product) ? escapeHtml(String(productMinStock(product)).replace(".", ",")) : ""}" placeholder="Sin mínimo" /> ${escapeHtml(product.unit || "")}</label>
+        <button class="link-button" type="submit">Guardar mínimo</button>
+      </form>
       <div class="row-actions">
         <button class="link-button primary" data-edit-product-from-detail="${product.id}" type="button">Editar producto</button>
         <button class="link-button" data-close-product-detail type="button">Volver al depósito</button>
@@ -4013,6 +4449,23 @@ function renderProductDetail() {
     </div>
   `;
   detail.querySelector("[data-edit-product-from-detail]")?.addEventListener("click", () => editProduct(product.id));
+  detail.querySelector("#minStockForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const raw = String(event.currentTarget.elements.minStock.value || "").trim();
+    const minimum = raw ? parseDecimal(raw, NaN) : 0;
+    if (!Number.isFinite(minimum) || minimum < 0) { showToast("Indicá un número válido"); return; }
+    // Se guarda en el insumo del grupo que tenga más ingresos; en los demás depósitos se limpia para que no compitan.
+    productGroupProducts(product).forEach((item) => {
+      const value = item.id === product.id ? (minimum || "") : "";
+      if (String(item.minStock ?? "") === String(value)) return;
+      item.minStock = value;
+      queueSync("products", item, "update");
+    });
+    saveData();
+    renderAll();
+    renderProductDetail();
+    showToast(minimum ? `Stock mínimo: ${number(minimum, 2)} ${product.unit || ""}` : "Stock mínimo borrado");
+  });
   detail.querySelector("[data-close-product-detail]")?.addEventListener("click", closeProductDetail);
   detail.querySelectorAll("[data-open-output-order]").forEach((row) => {
     row.addEventListener("click", () => {
@@ -4084,7 +4537,7 @@ function addUnitTotal(map, unit, value) {
 function formatUnitTotals(map) {
   const entries = Array.from(map.entries()).filter(([, value]) => Math.abs(value) >= 0.005);
   if (!entries.length) return "-";
-  return entries.map(([unit, value]) => `${number(value, 2)} ${unit}`.trim()).join(" ? ");
+  return entries.map(([unit, value]) => `${number(value, 2)} ${unit}`.trim()).join(" · ");
 }
 
 function openLotFormForNew() {
@@ -4279,7 +4732,7 @@ function renderProducts() {
         <td>${number(stock.available, 2)} ${product.unit}</td>
         <td>${money(unitCost)}</td>
         <td>${money(stock.available * unitCost)}</td>
-        <td>${warehouses.join(", ") || "-"} ? ${statusBadge(product.status || "OK")}</td>
+        <td>${warehouses.join(", ") || "-"} · ${statusBadge(product.status || "OK")}</td>
         <td>${receiptLabels(product).join(", ") || "-"}</td>
         <td><button class="link-button" data-edit-product="${product.id}" type="button">Editar</button></td>
       </tr>
@@ -4443,7 +4896,30 @@ function costForLot(lot) {
   return buildLotCosts().find((item) => item.lot.id === lot.id) || emptyLotCostRecord(lot);
 }
 
-function buildLotCosts() {
+// ===== Campaña elegida en Costos =====
+// Vacío = la campaña activa (la más reciente de los lotes). Antes cada lote mostraba su propia campaña actual,
+// y no se podía ver una campaña anterior.
+let selectedCostCampaign = "";
+
+function costCampaignOptions() {
+  const values = [...data.orders, ...data.applications, ...data.closures, ...data.lots]
+    .map((record) => normalizeCampaignValue(record?.campaign))
+    .filter((value) => /^\d{4}\/\d{2}$/.test(value));
+  return [...new Set(values)].sort((a, b) => b.localeCompare(a));
+}
+
+function currentCostCampaign() {
+  return normalizeCampaignValue(selectedCostCampaign || activeCampaignValue());
+}
+
+function buildLotCosts(campaign = currentCostCampaign()) {
+  const cache = derivedData();
+  cache.lotCosts ||= new Map();
+  if (!cache.lotCosts.has(campaign)) cache.lotCosts.set(campaign, computeLotCosts(campaign));
+  return cache.lotCosts.get(campaign);
+}
+
+function computeLotCosts(campaign) {
   const byLot = new Map(data.lots.map((lot) => [lot.id, emptyLotCostRecord(lot)]));
 
   data.orders.forEach((order) => {
@@ -4451,14 +4927,14 @@ function buildLotCosts() {
     const lot = findLot(order);
     const item = lot ? byLot.get(lot.id) : null;
     const laborTotal = laborCostForOrder(order);
-    if (!item || !recordMatchesCampaign(order, lot, lot.campaign)) return;
+    if (!item || !recordMatchesCampaign(order, lot, campaign)) return;
     const hectares = parseDecimal(order.plannedHectares || order.Hectareas_planificadas);
     item.labor += laborTotal;
     item.entries.push({
       date: order.date || "",
       orderId: order.id || "-",
       task: order.task || "Labor / servicio",
-      description: order.owner ? `Labor / servicio ? ${order.owner}` : "Labor / servicio",
+      description: order.owner ? `Labor / servicio · ${order.owner}` : "Labor / servicio",
       category: "labor",
       quantity: hectares,
       unit: "ha",
@@ -4471,7 +4947,7 @@ function buildLotCosts() {
   uniqueApplicationRows(data.applications).forEach((application) => {
     const lot = findLot(application);
     const item = lot ? byLot.get(lot.id) : null;
-    if (!item || !recordMatchesCampaign(application, lot, lot.campaign)) return;
+    if (!item || !recordMatchesCampaign(application, lot, campaign)) return;
     const category = costCategory(productType(application.productId));
     const productCost = applicationProductCost(application);
     const unitCost = applicationUnitCost(application);
@@ -4513,8 +4989,31 @@ function buildLotCosts() {
   return Array.from(byLot.values()).filter((item) => item.total > 0).sort((a, b) => b.total - a.total);
 }
 
+function renderCostCampaignSelect() {
+  const select = document.querySelector("#costCampaignSelect");
+  if (!select) return;
+  const campaign = currentCostCampaign();
+  const options = costCampaignOptions();
+  if (campaign && !options.includes(campaign)) options.unshift(campaign);
+  select.innerHTML = options.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}${value === activeCampaignValue() ? " (actual)" : ""}</option>`).join("");
+  select.value = campaign;
+  if (!select.dataset.bound) {
+    select.dataset.bound = "true";
+    select.addEventListener("change", () => {
+      selectedCostCampaign = select.value === activeCampaignValue() ? "" : select.value;
+      renderCosts();
+      if (selectedCostLotId) renderLotCostDetail();
+      if (selectedCostCategory) renderCostCategoryDetail();
+    });
+  }
+  const note = document.querySelector("#costCampaignNote");
+  if (note) note.textContent = campaign === activeCampaignValue() ? "Campaña en curso" : "Campaña anterior: solo lo cargado en la app para esa campaña";
+}
+
 function renderCosts() {
-  const rows = buildLotCosts();
+  renderCostCampaignSelect();
+  const campaign = currentCostCampaign();
+  const rows = buildLotCosts(campaign);
   const totals = rows.reduce((acc, row) => {
     COST_CATEGORY_ORDER.forEach((category) => {
       acc[category] += parseDecimal(row[category]);
@@ -4536,7 +5035,7 @@ function renderCosts() {
     return `
       <article class="cost-card" data-open-cost-lot="${row.lot.id}">
         <div class="cost-card-head">
-          <div><strong>${displayLotName(row.lot)}</strong><span>${row.lot.farm} ? ${row.lot.campaign || "-"} ? ${number(row.lot.hectares, 2)} ha</span></div>
+          <div><strong>${displayLotName(row.lot)}</strong><span>${row.lot.farm} · ${campaign || "-"} · ${number(row.lot.hectares, 2)} ha</span></div>
           <b>${money(row.total)}</b>
         </div>
         <div class="cost-bar">
@@ -4552,7 +5051,7 @@ function renderCosts() {
   document.querySelector("#costTable").innerHTML = rows.map((row) => `
     <tr class="clickable-row" data-open-cost-lot="${row.lot.id}">
       <td>${displayLotName(row.lot)}</td>
-      <td>${row.lot.campaign || "-"}</td>
+      <td>${campaign || "-"}</td>
       <td>${number(row.lot.hectares, 2)}</td>
       <td>${money(row.labor)}</td>
       <td>${money(row.herbicides)}</td>
@@ -4573,8 +5072,150 @@ function renderCosts() {
   document.querySelectorAll("[data-open-cost-category]").forEach((element) => {
     element.addEventListener("click", () => openCostCategoryDetail(element.dataset.openCostCategory));
   });
+  renderMargins(campaign);
   if (selectedCostLotId) renderLotCostDetail();
   if (selectedCostCategory) renderCostCategoryDetail();
+}
+
+// ===== Margen bruto por lote y campaña =====
+// Ingreso: kg cosechados / 1000 × precio por tn de cada cierre (un lote puede tener dos cultivos en la campaña).
+// Costos: insumos + labores cargados en la app para esa campaña + "otros costos" de los cierres.
+// Se calcula en vivo: si cambia un precio de insumo o una labor, el margen se actualiza solo.
+function buildLotMargins(campaign = currentCostCampaign()) {
+  const costsByLot = new Map(buildLotCosts(campaign).map((row) => [row.lot.id, row]));
+  return data.lots.map((lot) => {
+    const closures = data.closures.filter((closure) => sameLot(closure, lot) && normalizeCampaignValue(closure.campaign) === campaign);
+    const costRow = costsByLot.get(lot.id);
+    if (!closures.length && !costRow) return null;
+    const harvestedHectares = Math.max(...closures.map((closure) => parseDecimal(closure.hectares)), 0);
+    const hectares = harvestedHectares || parseDecimal(lot.hectares);
+    const kg = closures.reduce((sum, closure) => sum + parseDecimal(closure.kgHarvested), 0);
+    const income = closures.reduce((sum, closure) => sum + parseDecimal(closure.kgHarvested) / 1000 * parseDecimal(closure.priceTon), 0);
+    const otherCosts = closures.reduce((sum, closure) => sum + parseDecimal(closure.otherCosts), 0);
+    const appCosts = costRow?.total || 0;
+    const totalCosts = appCosts + otherCosts;
+    const priced = closures.filter((closure) => parseDecimal(closure.kgHarvested) > 0 && parseDecimal(closure.priceTon) > 0);
+    const avgPrice = priced.length
+      ? priced.reduce((sum, closure) => sum + parseDecimal(closure.kgHarvested) * parseDecimal(closure.priceTon), 0) / priced.reduce((sum, closure) => sum + parseDecimal(closure.kgHarvested), 0)
+      : 0;
+    let status = "Completo";
+    if (!closures.length) status = "Sin cierre de campaña";
+    else if (!(kg > 0)) status = "Falta rinde";
+    else if (priced.length < closures.filter((closure) => parseDecimal(closure.kgHarvested) > 0).length) status = "Falta precio";
+    else if (!(appCosts > 0)) status = "Sin costos en la app";
+    // Ningún cultivo cuesta menos de u$s 50/ha: si da menos, faltan cargar labores o insumos de esa campaña.
+    else if (hectares && appCosts / hectares < 50) status = `Costos incompletos (u$s ${number(appCosts / hectares, 0)}/ha)`;
+    const complete = status === "Completo";
+    const yieldText = closures
+      .filter((closure) => parseDecimal(closure.kgHarvested) > 0)
+      .map((closure) => {
+        const ha = parseDecimal(closure.hectares) || parseDecimal(lot.hectares);
+        return `${canonicalCropName(closure.crop) || "-"} ${number(ha ? parseDecimal(closure.kgHarvested) / ha : 0, 0)}`;
+      })
+      .join(" · ");
+    return {
+      lot,
+      closures,
+      yieldText,
+      singleCrop: closures.length <= 1,
+      crops: [...new Set(closures.map((closure) => canonicalCropName(closure.crop)).filter(Boolean))].join(" / ") || lotCrop(lot.id) || "-",
+      hectares,
+      yieldKgHa: hectares && kg ? kg / hectares : 0,
+      avgPrice,
+      income,
+      appCosts,
+      otherCosts,
+      margin: income - totalCosts,
+      marginHa: hectares ? (income - totalCosts) / hectares : 0,
+      // Rinde de indiferencia: solo con un cultivo (con doble cultivo no hay un único rinde que cubra los costos).
+      breakEvenKgHa: closures.length <= 1 && avgPrice && hectares ? totalCosts / (avgPrice / 1000) / hectares : 0,
+      status,
+      complete
+    };
+  }).filter(Boolean).sort((a, b) => (b.complete - a.complete) || (b.marginHa - a.marginHa) || (b.appCosts - a.appCosts));
+}
+
+function renderMargins(campaign = currentCostCampaign()) {
+  const table = document.querySelector("#marginTable");
+  const summary = document.querySelector("#marginSummary");
+  if (!table || !summary) return;
+  const rows = buildLotMargins(campaign);
+  const complete = rows.filter((row) => row.complete);
+  const sum = (list, field) => list.reduce((total, row) => total + row[field], 0);
+  const completeHa = sum(complete, "hectares");
+  summary.innerHTML = `
+    <article><span>Ingreso (lotes completos)</span><strong>${money(sum(complete, "income"))}</strong></article>
+    <article><span>Costos (lotes completos)</span><strong>${money(sum(complete, "appCosts") + sum(complete, "otherCosts"))}</strong></article>
+    <article><span>Margen bruto</span><strong>${money(sum(complete, "margin"))}</strong></article>
+    <article><span>Margen promedio</span><strong>${completeHa ? `${money(sum(complete, "margin") / completeHa)}/ha` : "-"}</strong></article>
+    <article><span>Lotes con margen completo</span><strong>${complete.length} de ${rows.length}</strong></article>`;
+  const cell = (ok, value) => ok ? value : "-";
+  table.innerHTML = rows.map((row) => `
+    <tr class="clickable-row ${row.complete ? "" : "row-incomplete"}" data-open-margin-lot="${escapeHtml(row.lot.id)}">
+      <td>${escapeHtml(displayLotName(row.lot))}</td>
+      <td>${escapeHtml(row.crops)}</td>
+      <td>${number(row.hectares, 1)}</td>
+      <td class="nowrap">${row.closures.filter((closure) => parseDecimal(closure.kgHarvested) > 0).map((closure) => {
+        const ha = parseDecimal(closure.hectares) || parseDecimal(row.lot.hectares);
+        return `<div>${row.singleCrop ? "" : `<small>${escapeHtml(canonicalCropName(closure.crop))}</small> `}${number(ha ? parseDecimal(closure.kgHarvested) / ha : 0, 0)}</div>`;
+      }).join("") || "-"}</td>
+      <td class="nowrap">${row.closures.filter((closure) => parseDecimal(closure.kgHarvested) > 0).map((closure) => `<div>${row.singleCrop ? "" : `<small>${escapeHtml(canonicalCropName(closure.crop))}</small> `}${parseDecimal(closure.priceTon) > 0 ? number(parseDecimal(closure.priceTon), 0) : "falta"}</div>`).join("") || "-"}</td>
+      <td>${cell(row.income, money(row.income))}</td>
+      <td>${money(row.appCosts)}</td>
+      <td>${row.otherCosts ? money(row.otherCosts) : "-"}</td>
+      <td class="${row.complete ? (row.margin >= 0 ? "value-good" : "value-bad") : ""}">${row.complete ? money(row.margin) : "-"}</td>
+      <td class="${row.complete ? (row.marginHa >= 0 ? "value-good" : "value-bad") : ""}">${row.complete ? money(row.marginHa) : "-"}</td>
+      <td>${cell(row.breakEvenKgHa, number(row.breakEvenKgHa, 0))}</td>
+      <td>${row.complete ? `<span class="badge done">Completo</span>` : `<span class="badge warn">${escapeHtml(row.status)}</span>`}</td>
+    </tr>`).join("") || `<tr><td colspan="12">No hay cierres ni costos cargados para la campaña ${escapeHtml(campaign || "-")}.</td></tr>`;
+  table.querySelectorAll("[data-open-margin-lot]").forEach((row) => row.addEventListener("click", () => openLotCostDetail(row.dataset.openMarginLot)));
+  renderReferencePrices(campaign);
+}
+
+// Precios de referencia: completa de una vez el precio por tn de los cierres de la campaña que no lo tienen.
+// Se guarda en cada cierre (planilla Campanas), así el margen queda igual en todos los dispositivos.
+function renderReferencePrices(campaign) {
+  const box = document.querySelector("#referencePrices") || (() => {
+    const element = document.createElement("form");
+    element.id = "referencePrices";
+    element.className = "reference-prices";
+    document.querySelector("#marginSummary")?.after(element);
+    return element;
+  })();
+  const missing = data.closures.filter((closure) => normalizeCampaignValue(closure.campaign) === campaign
+    && parseDecimal(closure.kgHarvested) > 0 && !(parseDecimal(closure.priceTon) > 0));
+  const crops = [...new Set(missing.map((closure) => canonicalCropName(closure.crop)).filter(Boolean))].sort(compareText);
+  if (!crops.length) {
+    box.innerHTML = "";
+    box.classList.add("hidden-panel");
+    return;
+  }
+  box.classList.remove("hidden-panel");
+  box.innerHTML = `
+    <strong>Hay ${missing.length} cierre${missing.length === 1 ? "" : "s"} con rinde y sin precio.</strong>
+    <span class="panel-note">Cargá un precio de referencia (u$s por tonelada, neto de gastos de comercialización) y se aplica solo a los cierres de ${escapeHtml(campaign)} que no tienen precio.</span>
+    <div class="reference-price-grid">${crops.map((crop) => `<label>${escapeHtml(crop)} <input name="${escapeHtml(crop)}" type="text" inputmode="decimal" placeholder="u$s/tn" /></label>`).join("")}</div>
+    <div class="form-actions"><button type="submit">Aplicar precios</button></div>`;
+  box.onsubmit = (event) => {
+    event.preventDefault();
+    const prices = Object.fromEntries(crops.map((crop) => [crop, parseDecimal(box.elements[crop]?.value)]).filter(([, price]) => price > 0));
+    if (!Object.keys(prices).length) { showToast("Cargá al menos un precio"); return; }
+    let updated = 0;
+    missing.forEach((closure) => {
+      const price = prices[canonicalCropName(closure.crop)];
+      if (!price) return;
+      const lot = findLot(closure);
+      closure.priceTon = price;
+      closure.income = parseDecimal(closure.kgHarvested) / 1000 * price;
+      if (!closure.applicationCostsManual && lot) closure.applicationCosts = applicationCostForLot(lot.id, campaign);
+      closure.grossMargin = closure.income - parseDecimal(closure.otherCosts) - parseDecimal(closure.applicationCosts);
+      queueSync("closures", closure, "update");
+      updated += 1;
+    });
+    saveData();
+    renderAll();
+    showToast(`Precio aplicado a ${updated} cierre${updated === 1 ? "" : "s"}`);
+  };
 }
 
 function costCategoryLabel(category) {
@@ -4620,7 +5261,7 @@ function renderCostCategoryDetail() {
       <div>
         <span class="eyebrow">Detalle por rubro</span>
         <h2>${costCategoryTitle(selectedCostCategory)}</h2>
-        <p>${entries.length} movimientos en ${lots} lotes</p>
+        <p>Campaña ${currentCostCampaign() || "-"} · ${entries.length} movimientos en ${lots} lotes</p>
       </div>
       <div class="row-actions">
         <button class="link-button filter-clear-button" id="clearCostCategoryFilter" type="button">Limpiar filtro</button>
@@ -4670,13 +5311,13 @@ function renderLotCostDetail() {
       <div>
         <span class="eyebrow">Costos del lote</span>
         <h2>${displayLotName(row.lot)}</h2>
-        <p>${row.lot.farm || "-"} ? ${row.lot.campaign || "-"} ? ${number(hectares, 2)} ha</p>
+        <p>${row.lot.farm || "-"} · Campaña ${currentCostCampaign() || "-"} · ${number(hectares, 2)} ha</p>
       </div>
       <button class="link-button" id="backToCosts" type="button">Volver a costos</button>
     </div>
     <div class="cost-detail-summary">
       <article><span>Total acumulado</span><strong>${money(row.total)}</strong></article>
-      <article><span>Total por hect?rea</span><strong>${money(hectares ? row.total / hectares : 0)}</strong></article>
+      <article><span>Total por hectárea</span><strong>${money(hectares ? row.total / hectares : 0)}</strong></article>
       <article><span>Labores</span><strong>${money(row.labor)}</strong></article>
       <article><span>Insumos</span><strong>${money(row.total - row.labor)}</strong></article>
     </div>
@@ -4702,7 +5343,7 @@ function renderLotCostDetail() {
 function cropClass(crop) {
   const normalized = crop.toLowerCase();
   if (normalized.includes("soja")) return "crop-soja";
-  if (normalized.includes("ma?z") || normalized.includes("maiz")) return "crop-maiz";
+  if (normalized.includes("maíz") || normalized.includes("maiz")) return "crop-maiz";
   if (normalized.includes("trigo")) return "crop-trigo";
   if (normalized.includes("girasol")) return "crop-girasol";
   return "crop-default";
@@ -4713,7 +5354,7 @@ function canonicalCropName(crop) {
   const normalized = normalizeName(value);
   if (!value) return "";
   if (normalized.startsWith("soja") && (normalized.includes("1") || normalized.includes("1ra") || normalized.includes("1o"))) return "Soja 1ra";
-  if (normalized.startsWith("soja") && (normalized.includes("2") || normalized.includes("2da") || normalized.includes("2o") || normalized.includes("2?"))) return "Soja 2da";
+  if (normalized.startsWith("soja") && (normalized.includes("2") || normalized.includes("2da") || normalized.includes("2o") || normalized.includes("2°") || normalized.includes("2º"))) return "Soja 2da";
   if (normalized.startsWith("soja")) return "Soja";
   if (normalized.includes("alfalfa")) return "Alfalfa";
   if (/^ma.*z/.test(normalized) || normalized.includes("maiz")) return "Maiz";
@@ -4826,7 +5467,7 @@ function renderCampaignDetail() {
 
   const lot = data.lots.find((item) => item.id === selectedCampaignLotId);
   if (!lot) {
-    container.innerHTML = `<div class="empty">No encontr? el lote seleccionado.</div>`;
+    container.innerHTML = `<div class="empty">No encontré el lote seleccionado.</div>`;
     return;
   }
 
@@ -4842,7 +5483,7 @@ function renderCampaignDetail() {
   const applicationCosts = editing?.applicationCostsManual ? (editing.applicationCosts || "") : "";
   const ensoNormalized = normalizeName(enso);
 
-  document.querySelector("#campaignDetailTitle").textContent = `${displayLotName(lot)}  ?  ${selectedCampaign}`;
+  document.querySelector("#campaignDetailTitle").textContent = `${displayLotName(lot)}  ·  ${selectedCampaign}`;
 
   const rows = records.map((record) => `
     <tr>
@@ -4866,7 +5507,7 @@ function renderCampaignDetail() {
         <div class="detail-grid campaign-summary">
           <article><span>Lote</span><strong>${displayLotName(lot)}</strong></article>
           <article><span>Campo</span><strong>${lot.farm || "-"}</strong></article>
-          <article><span>Hect?reas del lote</span><strong>${numberOptional(lot.hectares, 2)}</strong></article>
+          <article><span>Hectáreas del lote</span><strong>${numberOptional(lot.hectares, 2)}</strong></article>
           <article><span>Campaña</span><strong>${selectedCampaign}</strong></article>
         </div>
         <div class="table-wrap">
@@ -4874,7 +5515,7 @@ function renderCampaignDetail() {
             <thead>
               <tr>
                 <th>Cultivo</th>
-                <th>Var./H?b.</th>
+                <th>Var./Híb.</th>
                 <th>ENSO</th>
                 <th>Ha</th>
                 <th>Kg cosechados</th>
@@ -4980,7 +5621,7 @@ function saveCampaignDetailRecord(event) {
 function deleteCampaignDetailRecord(id) {
   const record = data.closures.find((closure) => closure.id === id);
   if (!record) return;
-  if (!window.confirm(`Eliminar ${record.crop || "este registro"} de la campaña ${record.campaign || selectedCampaign}?`)) return;
+  if (!window.confirm(`¿Eliminar ${record.crop || "este registro"} de la campaña ${record.campaign || selectedCampaign}?`)) return;
   data.closures = data.closures.filter((closure) => closure.id !== id);
   queueSync("closures", record, "delete");
   if (editingCampaignClosureId === id) editingCampaignClosureId = "";
@@ -5133,24 +5774,24 @@ function renderHistoryPanel() {
     <button class="history-crop-card ${historyCropCardClass(item.crop)} ${item.crop === selectedHistoryCrop ? "active" : ""}" type="button" data-history-crop="${item.crop}">
       <strong>${item.crop}</strong>
       <span>${item.avg ? `${number(item.avg)} kg/ha promedio` : "Sin rindes"}</span>
-      <small>${item.count} rindes ? ${item.lots} lotes</small>
-      ${item.crop === "Otros" ? `<small>${item.cropNames.join(" ? ")}</small>` : ""}
+      <small>${item.count} rindes · ${item.lots} lotes</small>
+      ${item.crop === "Otros" ? `<small>${item.cropNames.join(" · ")}</small>` : ""}
       <small>Mejor: ${item.best ? `${item.best.lot?.name || item.best.lotName || item.best.lotId || "Sin lote"} ${item.best.campaign} (${number(item.best.yieldKgHa)} kg/ha)` : "-"}</small>
     </button>
-  `).join("") || `<div class="empty">Todavía no hay rendimientos hist?ricos cargados.</div>`;
+  `).join("") || `<div class="empty">Todavía no hay rendimientos históricos cargados.</div>`;
 }
 
 function renderHistoryLotSearch() {
   const list = document.querySelector("#historyLotOptions");
   if (!list) return;
-  list.innerHTML = data.lots.map((lot) => `<option value="${displayLotName(lot)} ? ${lot.farm || ""}"></option>`).join("");
+  list.innerHTML = data.lots.map((lot) => `<option value="${displayLotName(lot)} · ${lot.farm || ""}"></option>`).join("");
 }
 
 function findHistoryLotFromSearch() {
   const input = document.querySelector("#historyLotSearch");
   const value = normalizeName(input?.value || "");
-  return data.lots.find((lot) => normalizeName(`${displayLotName(lot)} ? ${lot.farm || ""}`) === value)
-    || data.lots.find((lot) => normalizeName(`${lot.name} ? ${lot.farm || ""}`) === value)
+  return data.lots.find((lot) => normalizeName(`${displayLotName(lot)} · ${lot.farm || ""}`) === value)
+    || data.lots.find((lot) => normalizeName(`${lot.name} · ${lot.farm || ""}`) === value)
     || data.lots.find((lot) => normalizeName(displayLotName(lot)) === value)
     || data.lots.find((lot) => normalizeName(lot.name) === value)
     || data.lots.find((lot) => value && normalizeName(`${displayLotName(lot)} ${lot.farm || ""}`).includes(value))
@@ -5198,7 +5839,7 @@ function renderHistoryCropDetail(records = historicalYieldRecords()) {
     <div class="history-split">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Lote</th><th>Promedio kg/ha</th><th>A?os con rinde</th></tr></thead>
+          <thead><tr><th>Lote</th><th>Promedio kg/ha</th><th>Años con rinde</th></tr></thead>
           <tbody>
             ${avgByLot.map((item) => `<tr><td>${item.lotLabel}</td><td><strong>${number(item.total / item.count)}</strong></td><td>${item.count}</td></tr>`).join("") || `<tr><td colspan="3">No hay rindes para promediar.</td></tr>`}
           </tbody>
@@ -5206,7 +5847,7 @@ function renderHistoryCropDetail(records = historicalYieldRecords()) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Campaña</th><th>Lote</th><th>Cultivo</th><th>Var./H?b.</th><th>ENSO</th><th>Rinde kg/ha</th></tr></thead>
+          <thead><tr><th>Campaña</th><th>Lote</th><th>Cultivo</th><th>Var./Híb.</th><th>ENSO</th><th>Rinde kg/ha</th></tr></thead>
           <tbody>
             ${cropRecords.map((record) => `
               <tr>
@@ -5272,7 +5913,7 @@ function renderHistoryLotDetail(records = historicalYieldRecords()) {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Campaña</th><th>Cultivo</th><th>Var./H?b.</th><th>ENSO</th><th>Ha</th><th>Kg cosechados</th><th>Rinde kg/ha</th></tr></thead>
+        <thead><tr><th>Campaña</th><th>Cultivo</th><th>Var./Híb.</th><th>ENSO</th><th>Ha</th><th>Kg cosechados</th><th>Rinde kg/ha</th></tr></thead>
         <tbody>
           ${visibleLotRecords.map((record) => `
             <tr>
@@ -5351,8 +5992,325 @@ function renderClosures() {
     .join("") || `<tr><td colspan="9">No hay cierres cargados.</td></tr>`;
 }
 
+// ===== Fase 3: fotos completas a Drive =====
+// La miniatura sigue en la planilla (la ven todos al instante). La foto completa espera en el celular (IndexedDB,
+// no ocupa el espacio de localStorage) y se sube a Drive después de sincronizar el registro.
+const photoUploadDbName = "gestion-agro-fotos";
+const fullPhotoBySmall = new Map();
+let photoUploadsPending = 0;
+let photoUploadRunning = false;
+
+function photoUploadDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error("Este navegador no permite guardar fotos completas")); return; }
+    const request = indexedDB.open(photoUploadDbName, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("uploads", { keyPath: "uploadId" });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function photoUploadStore(mode, action) {
+  const db = await photoUploadDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("uploads", mode);
+    const result = action(tx.objectStore("uploads"));
+    tx.oncomplete = () => { db.close(); resolve(result?.result ?? result); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function listPhotoUploads() {
+  try {
+    const uploads = await photoUploadStore("readonly", (store) => store.getAll());
+    photoUploadsPending = uploads.length;
+    return uploads;
+  } catch {
+    photoUploadsPending = 0;
+    return [];
+  }
+}
+
+async function queuePhotoUploads(table, recordId, dataUrls) {
+  const items = dataUrls.filter(Boolean).map((dataUrl) => ({ uploadId: uid("foto").replace(/[^a-zA-Z0-9_-]/g, ""), table, recordId, dataUrl, createdAt: new Date().toISOString(), attempts: 0, lastError: "" }));
+  if (!items.length) return;
+  try {
+    await photoUploadStore("readwrite", (store) => items.forEach((item) => store.put(item)));
+    await listPhotoUploads();
+    renderSyncStatus();
+  } catch (error) {
+    showToast("No se pudo guardar la foto completa en el celular: queda solo la miniatura");
+  }
+}
+
+// Foto completa para Drive: hasta 1600 px, JPEG. Se calcula en paralelo a la miniatura.
+async function rememberFullPhoto(file, smallDataUrl) {
+  if (!file || !smallDataUrl) return;
+  const full = await readImageAsDataUrl(file, 1600, 3000000);
+  if (full) fullPhotoBySmall.set(smallDataUrl, full);
+}
+
+async function processPhotoUploads() {
+  if (photoUploadRunning || !syncConfig.apiUrl || navigator.onLine === false) return;
+  const uploads = await listPhotoUploads();
+  if (!uploads.length) return;
+  photoUploadRunning = true;
+  let uploaded = 0;
+  try {
+    for (const upload of uploads) {
+      let result;
+      try {
+        const response = await fetch(syncConfig.apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "uploadPhoto", key: syncConfig.apiKey || "", upload: { uploadId: upload.uploadId, table: upload.table, recordId: upload.recordId, dataUrl: upload.dataUrl } })
+        });
+        result = await response.json();
+      } catch {
+        break; // sin conexión: se reintenta en la próxima sincronización
+      }
+      if (result?.ok) {
+        await photoUploadStore("readwrite", (store) => store.delete(upload.uploadId));
+        uploaded += 1;
+        const record = syncCollection(upload.table).find((item) => item.id === upload.recordId);
+        if (record && result.url && !String(record.driveLinks || "").includes(result.url)) {
+          record.driveLinks = [record.driveLinks, result.url].filter(Boolean).join("\n");
+        }
+        continue;
+      }
+      if (/clave de acceso/i.test(result?.error || "")) break;
+      upload.attempts = (upload.attempts || 0) + 1;
+      upload.lastError = result?.pending ? "" : (result?.error || "No se pudo subir");
+      await photoUploadStore("readwrite", (store) => store.put(upload));
+    }
+  } finally {
+    photoUploadRunning = false;
+    await listPhotoUploads();
+    if (uploaded) {
+      saveData();
+      renderAll();
+      showToast(`${uploaded} foto${uploaded === 1 ? "" : "s"} subida${uploaded === 1 ? "" : "s"} a Drive`);
+    } else {
+      renderSyncStatus();
+    }
+  }
+}
+
+function driveLinksHtml(record, label = "Foto completa") {
+  const links = String(record?.driveLinks || "").split(/\s+/).filter((link) => /^https:\/\/(drive|docs)\.google\.com\//.test(link));
+  if (!links.length) return "";
+  return `<span class="drive-links">${links.map((link, index) => `<a class="link-button" href="${escapeHtml(link)}" target="_blank" rel="noopener">${label}${links.length > 1 ? ` ${index + 1}` : ""} en Drive</a>`).join(" ")}</span>`;
+}
+
+// ===== Fase 3: orden de trabajo para mandar al contratista =====
+function lotCentroidLink(lot) {
+  const polygon = polygonForLot(lot);
+  const points = (polygon?.coordinates || []).filter((point) => Array.isArray(point) && point.length >= 2);
+  if (!points.length) return "";
+  const lon = points.reduce((sum, point) => sum + Number(point[0]), 0) / points.length;
+  const lat = points.reduce((sum, point) => sum + Number(point[1]), 0) / points.length;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+  return `https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)}`;
+}
+
+function orderShareText(orderId) {
+  const order = orderById(orderId);
+  if (!order) return "";
+  const lot = findLot(order);
+  const rows = uniqueApplicationRows(applicationsForOrder(order.id));
+  const hectares = parseDecimal(order.plannedHectares || rows[0]?.hectares);
+  const location = lot ? lotCentroidLink(lot) : "";
+  const lines = [
+    `*Orden de trabajo ${orderShortLabel(order)}*`,
+    `Tarea: ${order.task || "-"}`,
+    `Fecha: ${dateShort(order.date)}`,
+    `Lote: ${lotName(order.lotId)}${lot?.farm ? ` (${lot.farm})` : ""}`,
+    `Superficie: ${number(hectares, 2)} ha`,
+    `Cultivo: ${order.crop || lotCrop(order.lotId) || "-"}${order.variety ? ` · ${order.variety}` : ""}`,
+    `Contratista: ${order.owner || "-"}`
+  ];
+  if (location) lines.push(`Ubicación: ${location}`);
+  if (rows.length) {
+    lines.push("", "*Receta*");
+    rows.forEach((row) => {
+      const product = applicationProduct(row);
+      const unit = product?.unit || "";
+      lines.push(`• ${row.productName || productName(row.productId)}: ${number(parseDecimal(row.dose), 3)} ${unit}/ha → total ${number(applicationQuantity(row), 2)} ${unit}${product?.warehouse ? ` (${product.warehouse})` : ""}`);
+    });
+  }
+  if (order.notes) lines.push("", `Observaciones: ${order.notes}`);
+  return lines.join("\n");
+}
+
+async function shareOrder(orderId, mode = "share") {
+  const text = orderShareText(orderId);
+  if (!text) return;
+  if (mode === "copy") {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("Orden copiada");
+    } catch {
+      showToast("No se pudo copiar automáticamente");
+    }
+    return;
+  }
+  if (navigator.share && /Android|iPhone|iPad/i.test(navigator.userAgent)) {
+    try {
+      await navigator.share({ text });
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+}
+
+// ===== Fase 3: resumen por contratista =====
+let contractorCampaign = "";
+let selectedContractorKey = "";
+
+function contractorKey(name) {
+  return normalizeName(name).replace(/\s+/g, " ");
+}
+
+function orderWorkMonth(order) {
+  return String(order.completionDate || order.date || "").slice(0, 7);
+}
+
+function monthLabel(month) {
+  const [year, value] = String(month).split("-");
+  const names = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  return value ? `${names[Number(value) - 1] || value} ${year}` : "Sin fecha";
+}
+
+function buildContractorSummary(campaign = contractorCampaign) {
+  const groups = new Map();
+  data.orders
+    .filter((order) => order.status !== "Cancelada")
+    .filter((order) => !campaign || normalizeCampaignValue(order.campaign || findLot(order)?.campaign) === campaign)
+    .forEach((order) => {
+      const key = contractorKey(order.owner) || "(sin contratista)";
+      if (!groups.has(key)) groups.set(key, { key, names: new Map(), months: new Map(), orders: [], hectares: 0, labor: 0, missingCost: 0 });
+      const group = groups.get(key);
+      const name = String(order.owner || "").trim() || "(sin contratista)";
+      group.names.set(name, (group.names.get(name) || 0) + 1);
+      const month = orderWorkMonth(order);
+      if (!group.months.has(month)) group.months.set(month, { month, orders: [], hectares: 0, labor: 0, missingCost: 0, tasks: new Map() });
+      const bucket = group.months.get(month);
+      const hectares = parseDecimal(order.plannedHectares);
+      const labor = laborCostForOrder(order);
+      [group, bucket].forEach((target) => {
+        target.orders.push(order);
+        target.hectares += hectares;
+        target.labor += labor;
+        if (!(labor > 0)) target.missingCost += 1;
+      });
+      bucket.tasks.set(order.task || "-", (bucket.tasks.get(order.task || "-") || 0) + hectares);
+    });
+  return [...groups.values()].map((group) => ({
+    ...group,
+    name: [...group.names.entries()].sort((a, b) => b[1] - a[1])[0][0],
+    variants: [...group.names.keys()],
+    months: [...group.months.values()].sort((a, b) => b.month.localeCompare(a.month))
+  })).sort((a, b) => b.labor - a.labor);
+}
+
+function renderContractors() {
+  const view = document.querySelector("#contratistas");
+  if (!view) return;
+  const select = view.querySelector("#contractorCampaignSelect");
+  const options = costCampaignOptions();
+  if (contractorCampaign === "" && !select.dataset.bound) contractorCampaign = activeCampaignValue();
+  select.innerHTML = [`<option value="">Todas las campañas</option>`, ...options.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)].join("");
+  select.value = contractorCampaign;
+  if (!select.dataset.bound) {
+    select.dataset.bound = "true";
+    select.addEventListener("change", () => { contractorCampaign = select.value; renderContractors(); });
+    view.querySelector("#contractorCsv").addEventListener("click", downloadContractorCsv);
+  }
+  const groups = buildContractorSummary(contractorCampaign);
+  const totals = groups.reduce((acc, group) => ({ hectares: acc.hectares + group.hectares, labor: acc.labor + group.labor, orders: acc.orders + group.orders.length, missing: acc.missing + group.missingCost }), { hectares: 0, labor: 0, orders: 0, missing: 0 });
+  view.querySelector("#contractorSummary").innerHTML = `
+    <article><span>Labores</span><strong>${money(totals.labor)}</strong></article>
+    <article><span>Hectáreas trabajadas</span><strong>${number(totals.hectares, 0)} ha</strong></article>
+    <article><span>Órdenes</span><strong>${totals.orders}</strong></article>
+    <article><span>Sin costo cargado</span><strong>${totals.missing}</strong></article>`;
+  view.querySelector("#contractorTable").innerHTML = groups.map((group) => {
+    const open = selectedContractorKey === group.key;
+    const header = `
+      <tr class="clickable-row contractor-row ${open ? "open" : ""}" data-contractor="${escapeHtml(group.key)}">
+        <td><b>${escapeHtml(group.name)}</b>${group.variants.length > 1 ? `<br><small class="muted">También escrito: ${escapeHtml(group.variants.filter((name) => name !== group.name).join(", "))}</small>` : ""}</td>
+        <td>${open ? "▾" : "▸"} ${group.months.length} mes${group.months.length === 1 ? "" : "es"}</td>
+        <td>${group.orders.length}</td>
+        <td>${number(group.hectares, 1)}</td>
+        <td>${money(group.labor)}</td>
+        <td>${group.hectares ? money(group.labor / group.hectares) : "-"}</td>
+        <td>${group.missingCost ? `<span class="badge warn">${group.missingCost} sin costo</span>` : ""}</td>
+      </tr>`;
+    const months = open ? group.months.map((month) => `
+      <tr class="contractor-month">
+        <td colspan="2">${escapeHtml(monthLabel(month.month))}<br><small class="muted">${escapeHtml([...month.tasks.entries()].map(([task, ha]) => `${task} ${number(ha, 0)} ha`).join(" · "))}</small></td>
+        <td>${month.orders.length}</td>
+        <td>${number(month.hectares, 1)}</td>
+        <td>${money(month.labor)}</td>
+        <td>${month.hectares ? money(month.labor / month.hectares) : "-"}</td>
+        <td>${month.orders.map((order) => `<button class="link-button" type="button" data-contractor-order="${escapeHtml(order.id)}">${escapeHtml(orderShortLabel(order))}</button>`).join(" ")}</td>
+      </tr>`).join("") : "";
+    return header + months;
+  }).join("") || `<tr><td colspan="7">No hay órdenes para esta campaña.</td></tr>`;
+  view.querySelectorAll("[data-contractor]").forEach((row) => row.addEventListener("click", () => {
+    selectedContractorKey = selectedContractorKey === row.dataset.contractor ? "" : row.dataset.contractor;
+    renderContractors();
+  }));
+  view.querySelectorAll("[data-contractor-order]").forEach((button) => button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openOrderDetail(button.dataset.contractorOrder, "contratistas");
+  }));
+}
+
+function downloadContractorCsv() {
+  const groups = buildContractorSummary(contractorCampaign);
+  const cell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const decimal = (value, digits = 2) => Number(value || 0).toFixed(digits).replace(".", ",");
+  const lines = [["Contratista", "Mes", "Orden", "Fecha", "Fecha finalización", "Lote", "Tarea", "Ha", "Labor u$s/ha", "Labor u$s total", "Campaña", "Estado"].map(cell).join(";")];
+  groups.forEach((group) => group.months.forEach((month) => month.orders.forEach((order) => {
+    lines.push([group.name, month.month, orderShortLabel(order), order.date, order.completionDate || "", lotName(order.lotId), order.task, decimal(order.plannedHectares), decimal(order.laborCostHa), decimal(laborCostForOrder(order)), order.campaign || "", order.status].map(cell).join(";"));
+  })));
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `labores-contratistas-${(contractorCampaign || "todas").replace("/", "-")}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+}
+
+// ===== Fase 3: aviso de compra repetida =====
+// Misma fecha, misma cantidad y mismo precio que un ingreso ya cargado con OTRO número: suele ser la misma compra
+// cargada dos veces (pasó con Urea y Picloram). Se pregunta antes de guardar.
+function possibleDuplicatePurchases(lines, shared, toUsd) {
+  const warnings = [];
+  lines.forEach((line) => {
+    const product = findDepositProductMatch({ ...line, warehouse: shared.warehouse || "" }) || matchingProductByName(line.name);
+    if (!product) return;
+    const quantity = parseDecimal(line.quantity);
+    const unitCost = toUsd(line.unitCost);
+    receiptEntries(product).forEach((entry) => {
+      if (!entry.detailed || entry.date !== shared.receiptDate) return;
+      if (Math.abs(parseDecimal(entry.quantity) - quantity) > 0.001) return;
+      if (Math.abs(parseDecimal(entry.unitCost) - unitCost) > Math.max(0.01, unitCost * 0.005)) return;
+      if (normalizeName(entry.number) === normalizeName(shared.receiptNumber)) return;
+      warnings.push(`${line.name}: ${number(quantity, 2)} a ${number(unitCost, 2)} el ${dateShort(entry.date)} ya está cargado con el comprobante ${entry.number}${entry.supplier ? ` (${entry.supplier})` : ""}`);
+    });
+  });
+  return warnings;
+}
+
 function renderAll() {
+  averageCostVersion += 1;
   fillSelects();
+  renderContractors();
   applyActiveCampaignDefaults();
   renderSyncStatus();
   renderDashboard();
@@ -5425,7 +6383,7 @@ function bindForms() {
       return;
     }
     if (!editingProductId && existing && values.receiptNumber && hasReceiptNumber(existing, values.receiptNumber)) {
-      showToast("Ese remito ya est? cargado para este producto");
+      showToast("Ese remito ya está cargado para este producto");
       return;
     }
     const receiptNumbers = editingProductId
@@ -5525,6 +6483,7 @@ function bindForms() {
     const laborCostHa = parseDecimal(values.laborCostHa);
     const existing = editingOrderId ? data.orders.find((order) => order.id === editingOrderId) : null;
     const lot = findLot(values);
+    if (values.owner) values.owner = canonicalContractorName(values.owner);
     const record = {
       id: editingOrderId || uid("ord"),
       ...values,
@@ -5627,6 +6586,8 @@ function bindForms() {
         queueSync("monitors", record);
       }
       saveData();
+      await queuePhotoUploads("monitors", record.id, photos.map((photo) => fullPhotoBySmall.get(photo)));
+      photos.forEach((photo) => fullPhotoBySmall.delete(photo));
       resetForm(form);
       if (form.elements.photoFile) form.elements.photoFile.value = "";
       monitorPhotoDraft = [];
@@ -6051,18 +7012,18 @@ function bindMapUpload() {
     if (!file) return;
 
     if (file.name.toLowerCase().endsWith(".kmz")) {
-      showToast("Por ahora carg? el archivo KML sin comprimir");
+      showToast("Por ahora cargá el archivo KML sin comprimir");
       event.target.value = "";
       return;
     }
 
     try {
       const polygons = parseKml(await file.text());
-      if (!polygons.length) throw new Error("El KML no tiene pol?gonos.");
+      if (!polygons.length) throw new Error("El KML no tiene polígonos.");
       data.mapPolygons = polygons;
       saveData();
       renderMap(polygons[0].id);
-      showToast(`${polygons.length} pol?gonos cargados`);
+      showToast(`${polygons.length} polígonos cargados`);
     } catch (error) {
       showToast(error.message || "No se pudo cargar el KML");
     } finally {
@@ -6105,6 +7066,7 @@ window.addEventListener("afterprint", () => {
   delete document.body.dataset.printApplicationId;
 });
 renderAll();
+listPhotoUploads().then(renderSyncStatus);
 applyOrderLotDefaultHectares(true);
 applyLotDefaultCrop(document.querySelector("#orderForm"), true);
 applyLotDefaultVariety(document.querySelector("#orderForm"), true);
