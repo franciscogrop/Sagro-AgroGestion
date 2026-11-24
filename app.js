@@ -675,6 +675,7 @@ function mergeRemoteData(remote, missingTables = []) {
   });
   normalizeCampaignRecords(data);
   data.products.forEach(recalculateApplicationsForProduct);
+  syncLotsWithRotation();
   if (skipped.length) {
     const names = skipped.map(syncTableLabel).join(", ");
     window.setTimeout(() => showToast(`La planilla no devolvió: ${names}. No se borró nada de este celular; revisá las pestañas.`), 2000);
@@ -1766,9 +1767,17 @@ function normalizeCampaignRecords(dataset) {
   });
 }
 
+// Campaña activa = la que tienen la mayoría de las hectáreas. Antes era la más nueva de cualquier lote: con pasar un
+// solo lote a la campaña siguiente, toda la app (costos, panel) saltaba a esa campaña.
 function activeCampaignValue() {
-  const campaigns = data.lots.map((lot) => normalizeCampaignValue(lot.campaign)).filter(Boolean);
-  return campaigns.sort((a, b) => parseInt(b, 10) - parseInt(a, 10))[0] || "";
+  const hectaresByCampaign = new Map();
+  data.lots.forEach((lot) => {
+    const campaign = normalizeCampaignValue(lot.campaign);
+    if (!campaign) return;
+    hectaresByCampaign.set(campaign, (hectaresByCampaign.get(campaign) || 0) + (parseDecimal(lot.hectares) || 1));
+  });
+  return [...hectaresByCampaign.entries()]
+    .sort((a, b) => (b[1] - a[1]) || (parseInt(b[0], 10) - parseInt(a[0], 10)))[0]?.[0] || "";
 }
 
 function applyActiveCampaignDefaults() {
@@ -1957,19 +1966,94 @@ function lotHectares(lotId) {
   return Number(data.lots.find((lot) => lot.id === lotId)?.hectares || 0);
 }
 
+// ===== Cultivo actual del lote según la rotación y los cierres =====
+// Un lote puede tener varios cultivos en la misma campaña (Trigo / Soja 2da). Cuando el cultivo del lote tiene
+// cierre con kilos cosechados, deja de ser el actual y pasa a serlo el siguiente cultivo de la rotación que todavía
+// no se cosechó (de esa campaña o de una posterior). Así las órdenes nuevas toman el cultivo nuevo y sus costos no
+// se suman al cultivo ya cerrado.
+function closureHarvested(closure) {
+  return parseDecimal(closure?.kgHarvested) > 0;
+}
+
+function campaignStartYear(campaign) {
+  return parseInt(normalizeCampaignValue(campaign), 10) || 0;
+}
+
+function nextCampaignValue(campaign) {
+  const start = campaignStartYear(campaign);
+  return start ? `${start + 1}/${String(start + 2).slice(-2)}` : "";
+}
+
+// Orden dentro de la campaña: primero lo cosechado, después lo que sigue; los "2da" van detrás del cultivo de invierno.
+function cropSequenceRank(crop) {
+  return /2da|2do|segunda|2°|2º/.test(normalizeName(crop)) ? 2 : 1;
+}
+
+function lotRotationSequence(lot, campaign) {
+  const target = normalizeCampaignValue(campaign);
+  if (!lot || !target) return [];
+  return data.closures
+    .filter((closure) => sameLot(closure, lot) && normalizeCampaignValue(closure.campaign) === target && closure.crop)
+    .sort((a, b) => (Number(closureHarvested(b)) - Number(closureHarvested(a))) || (cropSequenceRank(a.crop) - cropSequenceRank(b.crop)));
+}
+
+function currentLotCropInfo(lot) {
+  if (!lot) return { crop: "", variety: "", campaign: "", harvested: false, moved: false };
+  const campaign = normalizeCampaignValue(lot.campaign);
+  const crop = canonicalCropName(lot.crop);
+  const sequence = lotRotationSequence(lot, campaign);
+  const own = crop ? sequence.find((closure) => canonicalCropName(closure.crop) === crop) : null;
+  if (crop && !(own && closureHarvested(own))) {
+    return { crop: lot.crop, variety: lot.variety || own?.variety || "", campaign, harvested: false, moved: false };
+  }
+  // El cultivo del lote ya se cosechó (o el lote no tiene cultivo): siguiente cultivo sin cosechar en la rotación.
+  const campaigns = [...new Set(data.closures.filter((closure) => sameLot(closure, lot)).map((closure) => normalizeCampaignValue(closure.campaign)))]
+    .filter((value) => value && campaignStartYear(value) >= campaignStartYear(campaign))
+    .sort((a, b) => campaignStartYear(a) - campaignStartYear(b));
+  for (const value of campaigns) {
+    const open = lotRotationSequence(lot, value).find((closure) => !closureHarvested(closure));
+    if (open) return { crop: canonicalCropName(open.crop), variety: open.variety || "", campaign: value, harvested: false, moved: true, previousCrop: lot.crop || "" };
+  }
+  return { crop: crop ? "" : (lot.crop || ""), variety: crop ? "" : (lot.variety || ""), campaign, harvested: Boolean(crop), moved: false, lastCrop: lot.crop || "" };
+}
+
 function lotCrop(lotId) {
-  const lot = data.lots.find((item) => item.id === lotId);
-  if (!lot) return "";
-  if (lot.crop) return lot.crop;
-  return data.closures.find((closure) => (
-    sameLot(closure, lot)
-    && closure.campaign === lot.campaign
-    && closure.crop
-  ))?.crop || "";
+  return currentLotCropInfo(data.lots.find((item) => item.id === lotId)).crop || "";
 }
 
 function lotVariety(lotId) {
-  return data.lots.find((lot) => lot.id === lotId)?.variety || "";
+  return currentLotCropInfo(data.lots.find((item) => item.id === lotId)).variety || "";
+}
+
+// Guarda en el lote el cambio de cultivo cuando el anterior ya se cosechó y la rotación tiene el siguiente.
+function syncLotsWithRotation() {
+  let changed = 0;
+  data.lots.forEach((lot) => {
+    const info = currentLotCropInfo(lot);
+    if (!info.moved) return;
+    lot.previousCrop = info.previousCrop || lot.previousCrop || "";
+    lot.crop = info.crop;
+    lot.variety = info.variety || "";
+    lot.campaign = info.campaign;
+    queueSync("lots", lot, "update", { auto: true });
+    changed += 1;
+  });
+  return changed;
+}
+
+// Cultivo al que se imputa cada costo: el de la orden; si la orden no lo tiene (barbechos viejos), el primer
+// cultivo de la campaña (el barbecho de abril es del trigo, no de la soja de 2da).
+function firstCampaignCrop(lot, campaign) {
+  return canonicalCropName(lotRotationSequence(lot, campaign)[0]?.crop || lot?.crop || "");
+}
+
+function orderCostCrop(order, lot, campaign) {
+  return canonicalCropName(order?.crop) || firstCampaignCrop(lot, campaign);
+}
+
+function applicationCostCrop(application, lot, campaign) {
+  const order = orderById(application?.orderId);
+  return order ? orderCostCrop(order, lot, campaign) : (canonicalCropName(application?.crop) || firstCampaignCrop(lot, campaign));
 }
 
 function applyLotDefaultCrop(form, force = false) {
@@ -1999,8 +2083,10 @@ function applyClosureDefaults(form, force = false) {
   const lot = data.lots.find((item) => item.id === form.elements.lotId?.value);
   if (!lot) return;
   if (form.elements.hectares && (force || !form.elements.hectares.value)) form.elements.hectares.value = lot.hectares || "";
-  if (form.elements.crop && (force || !form.elements.crop.value)) form.elements.crop.value = lot.crop || "";
-  if (form.elements.variety && (force || !form.elements.variety.value)) form.elements.variety.value = lot.variety || "";
+  const info = currentLotCropInfo(lot);
+  if (form.elements.crop && (force || !form.elements.crop.value)) form.elements.crop.value = info.crop || lot.crop || "";
+  if (form.elements.variety && (force || !form.elements.variety.value)) form.elements.variety.value = info.variety || lot.variety || "";
+  if (form.elements.campaign && info.campaign && (force || !form.elements.campaign.value)) form.elements.campaign.value = info.campaign;
 }
 
 function applyOrderLotDefaultHectares(force = false) {
@@ -2726,6 +2812,70 @@ function renderLotOutline(polygon) {
   `;
 }
 
+// Pasar al siguiente cultivo (misma campaña o la siguiente). Crea el cultivo en la rotación si no existe y lo deja
+// como cultivo actual del lote. Sirve también para cultivos sin cosecha (verdeos, pasturas) o para cambiar de campaña.
+function renderNextCropForm(lot, info) {
+  const campaign = info.campaign || normalizeCampaignValue(lot.campaign) || activeCampaignValue();
+  const next = nextCampaignValue(campaign);
+  const crops = [...new Set(data.closures.map((closure) => canonicalCropName(closure.crop)).concat(["Soja 1ra", "Soja 2da", "Maiz", "Maiz 2da", "Trigo", "Girasol", "Sorgo", "Alfalfa", "Verdeo"]).filter(Boolean))].sort(compareText);
+  const notice = info.harvested
+    ? `<p class="next-crop-notice">${escapeHtml(info.lastCrop || "El cultivo")} ya está cosechado. Cargá el cultivo que sigue para que las órdenes nuevas se imputen a él.</p>`
+    : "";
+  return `
+    <details class="next-crop" ${info.harvested ? "open" : ""}>
+      <summary>Pasar al siguiente cultivo o campaña</summary>
+      ${notice}
+      <form class="form-grid compact-form" data-next-crop-form="${escapeHtml(lot.id)}">
+        <label>Cultivo <input name="crop" list="nextCropList" required placeholder="Soja 2da" /></label>
+        <label>Variedad/Híbrido <input name="variety" placeholder="Opcional" /></label>
+        <label>Campaña
+          <select name="campaign">
+            <option value="${escapeHtml(campaign)}">${escapeHtml(campaign)} (misma campaña: segundo cultivo)</option>
+            ${next ? `<option value="${escapeHtml(next)}">${escapeHtml(next)} (campaña siguiente)</option>` : ""}
+          </select>
+        </label>
+        <div class="form-actions"><button type="submit">Guardar cultivo actual</button></div>
+      </form>
+      <datalist id="nextCropList">${crops.map((crop) => `<option value="${escapeHtml(crop)}"></option>`).join("")}</datalist>
+      <p class="panel-note">El cultivo anterior queda en la rotación con sus costos. Para su margen, cargale los kilos cosechados en Cierre de campaña.</p>
+    </details>`;
+}
+
+function bindNextCropForm(container) {
+  container?.querySelectorAll("[data-next-crop-form]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const lot = data.lots.find((item) => item.id === form.dataset.nextCropForm);
+      if (!lot) return;
+      const values = formData(form);
+      const crop = canonicalCropName(values.crop);
+      const campaign = normalizeCampaignValue(values.campaign);
+      if (!crop || !campaign) { showToast("Indicá el cultivo y la campaña"); return; }
+      const previous = currentLotCropInfo(lot);
+      let closure = lotRotationSequence(lot, campaign).find((item) => canonicalCropName(item.crop) === crop && !closureHarvested(item));
+      if (!closure) {
+        const groupId = lotRotationSequence(lot, campaign)[0]?.campaignGroupId || `CAM-${lot.id}-${campaign.replace("/", "-")}`;
+        closure = { id: uid("clo"), campaignGroupId: groupId, lotId: lot.id, lotName: displayLotName(lot), campaign, crop, variety: values.variety || "", hectares: parseDecimal(lot.hectares), kgHarvested: "", priceTon: "", otherCosts: 0, applicationCosts: "", applicationCostsManual: false, income: "", grossMargin: "" };
+        data.closures.push(closure);
+        queueSync("closures", closure);
+      } else if (values.variety && closure.variety !== values.variety) {
+        closure.variety = values.variety;
+        queueSync("closures", closure, "update");
+      }
+      const previousCrop = previous.crop || previous.lastCrop || lot.crop || "";
+      if (canonicalCropName(previousCrop) !== crop) lot.previousCrop = previousCrop;
+      lot.crop = crop;
+      lot.variety = values.variety || closure.variety || "";
+      lot.campaign = campaign;
+      queueSync("lots", lot, "update");
+      saveData();
+      renderAll();
+      openLotDetail(lot.id);
+      showToast(`${displayLotName(lot)}: cultivo actual ${crop} (${campaign})`);
+    });
+  });
+}
+
 function renderLotDetail(lotId, targetSelector, polygon = null) {
   const target = document.querySelector(targetSelector);
   const lot = data.lots.find((item) => item.id === lotId);
@@ -2741,7 +2891,9 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
   }
 
   const closures = lot ? data.closures.filter((closure) => sameLot(closure, lot)) : [];
-  const lastClosure = closures.slice().sort((a, b) => String(b.campaign || "").localeCompare(String(a.campaign || "")))[0];
+  // Último cierre real: el más reciente con kilos cosechados (y dentro de la campaña, el último cultivo).
+  const lastClosure = closures.filter(closureHarvested).sort((a, b) => (campaignStartYear(b.campaign) - campaignStartYear(a.campaign)) || (cropSequenceRank(b.crop) - cropSequenceRank(a.crop)))[0];
+  const cropInfo = currentLotCropInfo(lot);
   const orders = lot ? data.orders.filter((order) => sameLot(order, lot)).sort((a, b) => String(b.date).localeCompare(String(a.date))) : [];
   const pendingOrders = orders.filter((order) => order.status !== "Finalizada" && order.status !== "Cancelada").length;
   const orderCosts = buildOrderCosts(lot.id);
@@ -2759,21 +2911,22 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
         <span>${lot.farm} - ${number(lot.hectares, 2)} ha</span>
       </div>
       <div class="map-kpis">
-        <div><b>${lot.crop || "-"}</b><span>Cultivo</span></div>
-        <div><b>${lot.variety || "-"}</b><span>Variedad/Hibrido</span></div>
+        <div><b>${escapeHtml(cropInfo.crop || (cropInfo.harvested ? "Cosechado" : "-"))}</b><span>Cultivo actual</span></div>
+        <div><b>${escapeHtml(cropInfo.variety || "-")}</b><span>Variedad/Hibrido</span></div>
         <div><b>${orders.length}</b><span>ordenes</span></div>
         <div><b>${pendingOrders}</b><span>Pendientes</span></div>
         <div><b>${money(totalSpentHa)}</b><span>Costo acum./ha</span></div>
       </div>
       <div class="lot-info-with-outline">
         <div class="map-info-lines">
-          <span>Campaña ${lot.campaign || "-"}</span>
-          <span>Antecesor: ${lot.previousCrop || "-"}</span>
+          <span>Campaña ${cropInfo.campaign || lot.campaign || "-"}</span>
+          <span>Antecesor: ${escapeHtml(cropInfo.moved ? cropInfo.previousCrop : (lot.previousCrop || "-"))}</span>
           <span>Ambiente: ${lot.environment || "-"}</span>
-          <span>${lastClosure ? `Ultimo cierre: ${lastClosure.campaign}, ${numberOptional(closureYield(lastClosure))} kg/ha, ${lastClosure.variety || "sin variedad"}, ${lastClosure.enso || "sin ENSO"}, margen ${moneyOptional(lastClosure.grossMargin)}` : "Sin cierre historico cargado"}</span>
+          <span>${lastClosure ? `Último cierre: ${lastClosure.campaign} ${escapeHtml(canonicalCropName(lastClosure.crop))}, ${numberOptional(closureYield(lastClosure))} kg/ha, ${escapeHtml(lastClosure.variety || "sin variedad")}, ${escapeHtml(lastClosure.enso || "sin ENSO")}, margen ${moneyOptional(lastClosure.grossMargin)}` : "Sin cierre histórico cargado"}</span>
         </div>
         ${lotOutline}
       </div>
+      ${renderNextCropForm(lot, cropInfo)}
       <div class="map-subsection">
         <h3>ordenes del lote</h3>
         ${orders.length ? orders.map((order) => `
@@ -2844,6 +2997,7 @@ function renderLotDetail(lotId, targetSelector, polygon = null) {
   target.querySelectorAll("[data-open-order-detail]").forEach((row) => {
     row.addEventListener("click", () => openOrderDetail(row.dataset.openOrderDetail, targetSelector === "#fullLotDetail" ? "ficha-lote" : "mapa"));
   });
+  bindNextCropForm(target);
 }
 
 function buildOrderCosts(lotId) {
@@ -4997,6 +5151,7 @@ function computeLotCosts(campaign) {
     const hectares = parseDecimal(order.plannedHectares || order.Hectareas_planificadas);
     item.labor += laborTotal;
     item.entries.push({
+      crop: orderCostCrop(order, lot, campaign),
       date: order.date || "",
       orderId: order.id || "-",
       task: order.task || "Labor / servicio",
@@ -5019,7 +5174,9 @@ function computeLotCosts(campaign) {
     const unitCost = applicationUnitCost(application);
     const order = orderById(application.orderId);
     item[category] += productCost;
+    const entryCrop = applicationCostCrop(application, lot, campaign);
     item.entries.push({
+      crop: entryCrop,
       date: applicationPricingDate(application),
       orderId: application.orderId || "-",
       task: order?.task || "Aplicación",
@@ -5035,6 +5192,7 @@ function computeLotCosts(campaign) {
       const laborTotal = Number(application.laborCostTotal || 0);
       item.labor += laborTotal;
       if (laborTotal) item.entries.push({
+        crop: entryCrop,
         date: applicationPricingDate(application),
         orderId: application.orderId || "-",
         task: order?.task || "Labor / servicio",
@@ -5149,16 +5307,34 @@ function renderCosts() {
 // Se calcula en vivo: si cambia un precio de insumo o una labor, el margen se actualiza solo.
 function buildLotMargins(campaign = currentCostCampaign()) {
   const costsByLot = new Map(buildLotCosts(campaign).map((row) => [row.lot.id, row]));
-  return data.lots.map((lot) => {
-    const closures = data.closures.filter((closure) => sameLot(closure, lot) && normalizeCampaignValue(closure.campaign) === campaign);
+  const rows = [];
+  data.lots.forEach((lot) => {
+    const closures = lotRotationSequence(lot, campaign);
     const costRow = costsByLot.get(lot.id);
-    if (!closures.length && !costRow) return null;
+    if (!closures.length && !costRow) return;
+    if (closures.length <= 1) {
+      rows.push(buildMarginRow(lot, closures, costRow?.total || 0));
+      return;
+    }
+    // Doble cultivo: cada costo va al cultivo de su orden; lo que no tiene cultivo, al primero de la campaña.
+    const crops = closures.map((closure) => canonicalCropName(closure.crop));
+    const costByCrop = new Map();
+    (costRow?.entries || []).forEach((entry) => {
+      const crop = crops.includes(entry.crop) ? entry.crop : crops[0];
+      costByCrop.set(crop, (costByCrop.get(crop) || 0) + parseDecimal(entry.total));
+    });
+    closures.forEach((closure) => rows.push(buildMarginRow(lot, [closure], costByCrop.get(canonicalCropName(closure.crop)) || 0, true)));
+  });
+  return rows.sort((a, b) => (b.complete - a.complete) || (b.marginHa - a.marginHa) || (b.appCosts - a.appCosts));
+}
+
+function buildMarginRow(lot, closures, appCosts, partOfRotation = false) {
+  {
     const harvestedHectares = Math.max(...closures.map((closure) => parseDecimal(closure.hectares)), 0);
     const hectares = harvestedHectares || parseDecimal(lot.hectares);
     const kg = closures.reduce((sum, closure) => sum + parseDecimal(closure.kgHarvested), 0);
     const income = closures.reduce((sum, closure) => sum + parseDecimal(closure.kgHarvested) / 1000 * parseDecimal(closure.priceTon), 0);
     const otherCosts = closures.reduce((sum, closure) => sum + parseDecimal(closure.otherCosts), 0);
-    const appCosts = costRow?.total || 0;
     const totalCosts = appCosts + otherCosts;
     const priced = closures.filter((closure) => parseDecimal(closure.kgHarvested) > 0 && parseDecimal(closure.priceTon) > 0);
     const avgPrice = priced.length
@@ -5181,6 +5357,7 @@ function buildLotMargins(campaign = currentCostCampaign()) {
       .join(" · ");
     return {
       lot,
+      partOfRotation,
       closures,
       yieldText,
       singleCrop: closures.length <= 1,
@@ -5198,7 +5375,7 @@ function buildLotMargins(campaign = currentCostCampaign()) {
       status,
       complete
     };
-  }).filter(Boolean).sort((a, b) => (b.complete - a.complete) || (b.marginHa - a.marginHa) || (b.appCosts - a.appCosts));
+  }
 }
 
 function renderMargins(campaign = currentCostCampaign()) {
@@ -5273,7 +5450,7 @@ function renderReferencePrices(campaign) {
       const lot = findLot(closure);
       closure.priceTon = price;
       closure.income = parseDecimal(closure.kgHarvested) / 1000 * price;
-      if (!closure.applicationCostsManual && lot) closure.applicationCosts = applicationCostForLot(lot.id, campaign);
+      if (!closure.applicationCostsManual && lot) closure.applicationCosts = applicationCostForLot(lot.id, campaign, closure.crop);
       closure.grossMargin = closure.income - parseDecimal(closure.otherCosts) - parseDecimal(closure.applicationCosts);
       queueSync("closures", closure, "update");
       updated += 1;
@@ -5641,7 +5818,7 @@ function saveCampaignDetailRecord(event) {
   const otherCosts = parseDecimal(values.otherCosts);
   const manualApplicationCosts = values.applicationCosts === "" ? "" : parseDecimal(values.applicationCosts);
   const applicationCosts = manualApplicationCosts === ""
-    ? applicationCostForLot(lot.id, selectedCampaign)
+    ? applicationCostForLot(lot.id, selectedCampaign, selectedCrop)
     : manualApplicationCosts;
   const income = kgHarvested && priceTon ? (kgHarvested / 1000) * priceTon : "";
   const grossMargin = income === "" ? "" : income - otherCosts - Number(applicationCosts || 0);
@@ -5678,10 +5855,11 @@ function saveCampaignDetailRecord(event) {
   }
 
   editingCampaignClosureId = "";
+  const moved = syncLotsWithRotation();
   saveData();
   renderAll();
   renderCampaignDetail();
-  showToast("Campaña guardada");
+  showToast(moved ? `Campaña guardada. Cultivo actual: ${lotCrop(lot.id) || "-"}` : "Campaña guardada");
 }
 
 function deleteCampaignDetailRecord(id) {
@@ -5998,14 +6176,17 @@ function renderHistoryLotDetail(records = historicalYieldRecords()) {
   `;
 }
 
-function applicationCostForLot(lotId, campaign = "") {
+// Con crop: solo los costos de ese cultivo (cuando la campaña del lote tiene más de un cultivo).
+function applicationCostForLot(lotId, campaign = "", crop = "") {
   const lot = data.lots.find((item) => item.id === lotId);
   if (!lot) return 0;
   const targetCampaign = normalizeCampaignValue(campaign || lot.campaign);
+  const targetCrop = lotRotationSequence(lot, targetCampaign).length > 1 ? canonicalCropName(crop) : "";
   const eligibleOrders = data.orders.filter((order) => (
     sameLot(order, lot)
     && order.status === "Finalizada"
     && recordMatchesCampaign(order, lot, targetCampaign)
+    && (!targetCrop || orderCostCrop(order, lot, targetCampaign) === targetCrop)
   ));
   const eligibleOrderIds = new Set(eligibleOrders.map((order) => order.id));
   const labor = eligibleOrders.reduce((sum, order) => sum + laborCostForOrder(order), 0);
@@ -6015,6 +6196,7 @@ function applicationCostForLot(lotId, campaign = "") {
     .filter((application) => {
       if (!sameLot(application, lot) || !recordMatchesCampaign(application, lot, targetCampaign)) return false;
       const order = orderById(application.orderId);
+      if (!order && targetCrop && applicationCostCrop(application, lot, targetCampaign) !== targetCrop) return false;
       return !order || eligibleOrderIds.has(order.id);
     })
     .reduce((sum, application) => {
@@ -6800,7 +6982,7 @@ function bindForms() {
     const kgHarvested = parseDecimal(values.kgHarvested);
     const priceTon = parseDecimal(values.priceTon);
     const otherCosts = parseDecimal(values.otherCosts);
-    const applicationCosts = applicationCostForLot(values.lotId, values.campaign);
+    const applicationCosts = applicationCostForLot(values.lotId, values.campaign, crop);
     const income = (kgHarvested / 1000) * priceTon;
     const existing = editingClosureFormId
       ? data.closures.find((closure) => closure.id === editingClosureFormId)
@@ -6830,7 +7012,11 @@ function bindForms() {
       data.closures.push(record);
       queueSync("closures", record);
     }
+    // Si el cultivo cosechado era el actual del lote, pasa al siguiente de la rotación (si ya está cargado).
+    syncLotsWithRotation();
     saveData();
+    const closedLot = data.lots.find((item) => item.id === values.lotId);
+    const closedInfo = currentLotCropInfo(closedLot);
     const returnView = closureReturnView;
     editingClosureFormId = "";
     closureReturnView = "";
@@ -6843,7 +7029,9 @@ function bindForms() {
       if (returnView === "ficha-campana") renderCampaignDetail();
       switchView(returnView);
     }
-    showToast("Campaña cerrada");
+    showToast(closedInfo.harvested
+      ? "Cierre guardado. Cargá el cultivo que sigue desde la ficha del lote"
+      : kgHarvested > 0 ? `Cierre guardado. Cultivo actual: ${closedInfo.crop || "-"}` : "Campaña cerrada");
   });
 }
 
@@ -7131,6 +7319,7 @@ window.addEventListener("afterprint", () => {
   document.body.classList.remove("printing-application-order");
   delete document.body.dataset.printApplicationId;
 });
+if (syncLotsWithRotation()) saveData();
 renderAll();
 listPhotoUploads().then(renderSyncStatus);
 applyOrderLotDefaultHectares(true);

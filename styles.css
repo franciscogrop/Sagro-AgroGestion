@@ -2887,3 +2887,29 @@ td.nowrap { white-space: nowrap; }
 }
 
 .products-cell { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Ficha del lote: pasar al siguiente cultivo */
+.next-crop {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafcf9;
+  padding: 10px 14px;
+}
+
+.next-crop summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--green-dark);
+}
+
+.next-crop[open] summary { margin-bottom: 10px; }
+
+.next-crop-notice {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fff0d8;
+  color: #8a5a10;
+  font-weight: 600;
+}
