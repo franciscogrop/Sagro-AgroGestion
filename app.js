@@ -182,6 +182,22 @@ function safeStorageSet(key, value) {
 // Si en la planilla hay una versión más nueva (otro celular, una corrección a mano o un script), el Apps Script
 // no la pisa: devuelve un conflicto y la app pregunta qué versión queda.
 let syncInFlightId = "";
+// Límites para que "Sincronizando..." nunca quede colgado: cada envío espera como máximo 45 s, y una sincronización
+// completa corta a los 4 minutos (lo que falte sale en la próxima). La foto completa tiene 2 minutos.
+let syncItemTimeoutMs = 45000;
+let syncTotalTimeoutMs = 240000;
+let photoUploadTimeoutMs = 120000;
+let syncProgress = { done: 0, total: 0 };
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 function queueSync(table, record, action = "append", options = {}) {
   averageCostVersion += 1; // cualquier cambio invalida el caché de cálculos
@@ -287,7 +303,7 @@ function renderSyncStatus() {
     const pendingDetail = photoDetail + waiting.slice(0, 5).map((item) => `<span class="sync-line">${describe(item)}</span>`).join("")
       + (waiting.length > 5 ? `<span class="sync-line muted">y ${waiting.length - 5} más…</span>` : "");
     status.innerHTML = `
-      <strong>${syncRunning ? "Sincronizando..." : syncMessage()}</strong>
+      <strong>${syncRunning ? (syncProgress.total ? `Sincronizando ${Math.min(syncProgress.done, syncProgress.total)} de ${syncProgress.total}...` : "Leyendo la planilla...") : syncMessage()}</strong>
       <span>Los datos quedan guardados en este navegador aunque no haya señal.</span>
       ${conflictDetail || failingDetail ? `<div class="sync-problem-list">${conflictDetail}${failingDetail}</div>` : ""}
       ${pendingDetail ? `<div class="sync-pending-list">${pendingDetail}</div>` : ""}
@@ -444,8 +460,17 @@ async function syncPending() {
   let syncedCount = 0;
   let problemCount = 0;
   let stopMessage = "";
+  const startedAt = Date.now();
+  syncProgress = { done: 0, total: batch.length };
+  renderSyncStatus();
   try {
     for (const item of batch) {
+      if (Date.now() - startedAt > syncTotalTimeoutMs) {
+        stopMessage = "la sincronización tardó demasiado; lo que falta sale en la próxima";
+        break;
+      }
+      syncProgress.done += 1;
+      renderSyncStatus();
       if (!syncQueue.includes(item)) continue;
       const key = syncItemKey(item);
       if (blockedKeys.has(key)) continue;
@@ -486,6 +511,7 @@ async function syncPending() {
   } finally {
     syncInFlightId = "";
     syncRunning = false;
+    syncProgress = { done: 0, total: 0 };
     renderSyncStatus();
     renderAll();
   }
@@ -521,13 +547,15 @@ async function syncOneItem(item) {
   const body = JSON.stringify({ source: "gestion-agro", key: syncConfig.apiKey || "", items: [item] });
   let result;
   try {
-    const response = await fetch(syncConfig.apiUrl, {
+    const response = await fetchWithTimeout(syncConfig.apiUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body
-    });
+    }, syncItemTimeoutMs);
     result = await response.json();
-  } catch {
+  } catch (error) {
+    // Tardó demasiado: no se reintenta por el método alternativo (también tardaría). Sigue en la próxima.
+    if (error?.name === "AbortError") return { status: "transport", message: "Google tardó demasiado en responder. Queda pendiente para la próxima sincronización." };
     // No se pudo leer la respuesta. Un registro grande no entra en la dirección web del método alternativo:
     // se verifica leyendo la planilla si llegó igual.
     if (isLargeSyncItem(item)) {
@@ -2014,7 +2042,12 @@ function currentLotCropInfo(lot) {
     .sort((a, b) => campaignStartYear(a) - campaignStartYear(b));
   for (const value of campaigns) {
     const open = lotRotationSequence(lot, value).find((closure) => !closureHarvested(closure));
-    if (open) return { crop: canonicalCropName(open.crop), variety: open.variety || "", campaign: value, harvested: false, moved: true, previousCrop: lot.crop || "" };
+    if (!open) continue;
+    const openCrop = canonicalCropName(open.crop);
+    // Mismo cultivo y misma campaña que ya tiene el lote (p. ej. un "Trigo" repetido sin cosechar): no hay nada que
+    // mover. Antes esto encolaba el lote en cada sincronización y la cola nunca terminaba.
+    const same = openCrop === crop && value === campaign;
+    return { crop: openCrop, variety: open.variety || "", campaign: value, harvested: false, moved: !same, previousCrop: lot.crop || "" };
   }
   return { crop: crop ? "" : (lot.crop || ""), variety: crop ? "" : (lot.variety || ""), campaign, harvested: Boolean(crop), moved: false, lastCrop: lot.crop || "" };
 }
@@ -2033,7 +2066,11 @@ function syncLotsWithRotation() {
   data.lots.forEach((lot) => {
     const info = currentLotCropInfo(lot);
     if (!info.moved) return;
-    lot.previousCrop = info.previousCrop || lot.previousCrop || "";
+    // Mismo cultivo y campaña: no se toca (la variedad sola no alcanza; la app a veces la completa en memoria).
+    const unchanged = canonicalCropName(lot.crop) === info.crop
+      && normalizeCampaignValue(lot.campaign) === info.campaign;
+    if (unchanged) return;
+    if (canonicalCropName(info.previousCrop) !== info.crop) lot.previousCrop = info.previousCrop || lot.previousCrop || "";
     lot.crop = info.crop;
     lot.variety = info.variety || "";
     lot.campaign = info.campaign;
@@ -6310,11 +6347,11 @@ async function processPhotoUploads() {
     for (const upload of uploads) {
       let result;
       try {
-        const response = await fetch(syncConfig.apiUrl, {
+        const response = await fetchWithTimeout(syncConfig.apiUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "uploadPhoto", key: syncConfig.apiKey || "", upload: { uploadId: upload.uploadId, table: upload.table, recordId: upload.recordId, dataUrl: upload.dataUrl } })
-        });
+        }, photoUploadTimeoutMs);
         result = await response.json();
       } catch {
         break; // sin conexión: se reintenta en la próxima sincronización
