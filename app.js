@@ -305,6 +305,7 @@ function renderSyncStatus() {
     status.innerHTML = `
       <strong>${syncRunning ? (syncProgress.total ? `Sincronizando ${Math.min(syncProgress.done, syncProgress.total)} de ${syncProgress.total}...` : "Leyendo la planilla...") : syncMessage()}</strong>
       <span>Los datos quedan guardados en este navegador aunque no haya señal.</span>
+      ${!syncRunning && syncLastResult && !syncLastResult.ok ? `<div class="sync-line sync-error sync-last-error"><span><b>No se pudo sincronizar</b> (${escapeHtml(new Date(syncLastResult.at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }))}): ${escapeHtml(syncLastResult.message)}</span></div>` : ""}
       ${conflictDetail || failingDetail ? `<div class="sync-problem-list">${conflictDetail}${failingDetail}</div>` : ""}
       ${pendingDetail ? `<div class="sync-pending-list">${pendingDetail}</div>` : ""}
     `;
@@ -503,10 +504,18 @@ async function syncPending() {
     if (!stopMessage) await pullRemoteData();
     saveSyncQueue();
     saveData();
-    if (stopMessage) showToast(`No se pudo sincronizar: ${stopMessage}`);
-    else if (problemCount) showToast(`${problemCount} carga${problemCount === 1 ? "" : "s"} con problemas: revisá Sincronización`);
-    else showToast(syncedCount ? "Sincronizacion completa" : "Datos actualizados desde Sheets");
+    if (stopMessage) {
+      setSyncLastResult(false, stopMessage);
+      showToast(`No se pudo sincronizar: ${stopMessage}`);
+    } else if (problemCount) {
+      setSyncLastResult(true, "");
+      showToast(`${problemCount} carga${problemCount === 1 ? "" : "s"} con problemas: revisá Sincronización`);
+    } else {
+      setSyncLastResult(true, "");
+      showToast(syncedCount ? "Sincronizacion completa" : "Datos actualizados desde Sheets");
+    }
   } catch (error) {
+    setSyncLastResult(false, error?.message || "error desconocido");
     showToast(`No se pudo sincronizar: ${error.message || "queda pendiente"}`);
   } finally {
     syncInFlightId = "";
@@ -629,8 +638,8 @@ function pullRemoteData() {
     const script = document.createElement("script");
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error("Tiempo de lectura agotado"));
-    }, 20000);
+      reject(new Error("Google tardó demasiado en mandar la planilla (más de 45 segundos). Probá de nuevo en un rato."));
+    }, 45000);
 
     function cleanup() {
       window.clearTimeout(timeout);
@@ -1977,11 +1986,26 @@ function orderNeedsApplication(order) {
   return ["pulver", "fertiliz", "siembra", "resiembra", "inocul", "curasemilla"].some((token) => task.includes(token));
 }
 
-function showToast(message) {
+let toastTimer = 0;
+function showToast(message, durationMs) {
   const toast = document.querySelector("#toast");
   toast.textContent = message;
   toast.classList.add("show");
-  window.setTimeout(() => toast.classList.remove("show"), 1800);
+  // Los errores ("No se pudo…") quedan 7 segundos; el resto, 2.
+  const duration = durationMs || (/^no se pudo|error|tardó/i.test(String(message)) ? 7000 : 2000);
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.remove("show"), duration);
+}
+
+// Resultado de la última sincronización: queda fijo en el panel hasta que una salga bien.
+const syncLastResultKey = "gestion-agro-sync-ultimo-resultado";
+let syncLastResult = (() => {
+  try { return JSON.parse(safeStorageGet(syncLastResultKey) || "null"); } catch { return null; }
+})();
+
+function setSyncLastResult(ok, message) {
+  syncLastResult = { ok, message: String(message || ""), at: new Date().toISOString() };
+  safeStorageSet(syncLastResultKey, JSON.stringify(syncLastResult));
 }
 
 function todayValue() {
