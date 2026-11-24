@@ -1168,8 +1168,9 @@ function addDepositProductLine(values = {}) {
   line.querySelector(".remove-deposit-line")?.addEventListener("click", () => {
     line.remove();
     syncDepositLineButtons();
+    updateVoucherTotals();
   });
-  linesWrap.appendChild(line);
+  linesWrap.insertBefore(line, linesWrap.querySelector("#addDepositProductLine"));
   syncDepositLineButtons();
   line.querySelector('[name="name"]')?.focus();
 }
@@ -1193,7 +1194,9 @@ function initializeDepositFormLayout() {
   const removeButton = document.createElement("button");
   removeButton.className = "link-button danger hidden-panel remove-deposit-line";
   removeButton.type = "button";
-  removeButton.textContent = "Quitar producto";
+  removeButton.textContent = "✕";
+  removeButton.title = "Quitar este producto";
+  removeButton.setAttribute("aria-label", "Quitar este producto");
   line.appendChild(removeButton);
   const linesWrap = document.createElement("div");
   linesWrap.id = "depositProductLines";
@@ -1230,14 +1233,13 @@ function initializeDepositFormLayout() {
     supplierList.id = "supplierCatalogList";
     document.body.appendChild(supplierList);
   }
-  const actions = form.querySelector(".form-actions");
-  if (actions && !document.querySelector("#addDepositProductLine")) {
+  if (!document.querySelector("#addDepositProductLine")) {
     const button = document.createElement("button");
-    button.className = "link-button add-product-action";
+    button.className = "link-button add-line-button";
     button.id = "addDepositProductLine";
     button.type = "button";
-    button.textContent = "Agregar otro producto";
-    actions.insertBefore(button, document.querySelector("#cancelProductEdit"));
+    button.textContent = "+ Agregar producto";
+    linesWrap.appendChild(button);
     button.addEventListener("click", () => addDepositProductLine());
   }
   line.querySelector('[name="name"]')?.addEventListener("change", () => applyExistingProductDefaultsForLine(line));
@@ -1288,7 +1290,7 @@ function initializeVoucherFields(form, line, linesWrap) {
   const vatLabel = document.createElement("label");
   vatLabel.innerHTML = `IVA <select name="vatRate"><option value="10.5">10,5 %</option><option value="21">21 %</option><option value="27">27 %</option><option value="0">Exento</option></select>`;
   line.querySelector(".remove-deposit-line")?.before(vatLabel);
-  line.querySelector('[name="unitCost"]')?.closest("label")?.firstChild && (line.querySelector('[name="unitCost"]').closest("label").firstChild.textContent = "Precio unitario neto ");
+  line.querySelector('[name="unitCost"]')?.closest("label")?.firstChild && (line.querySelector('[name="unitCost"]').closest("label").firstChild.textContent = "Precio neto u. ");
   const footer = document.createElement("div");
   footer.className = "voucher-footer";
   footer.innerHTML = `
@@ -1542,7 +1544,7 @@ async function handleDepositProductSubmit(event) {
   form.elements.receiptDate.value = todayValue();
   if (form.elements.receiptPhotoFile) form.elements.receiptPhotoFile.value = "";
   document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
-  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad ";
   form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
   document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
   document.querySelector("#productFormBand")?.classList.add("hidden-panel");
@@ -4138,7 +4140,7 @@ function cancelProductEdit() {
     resetDepositProductLines();
   }
   document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
-  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad ";
   if (form) form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
   document.querySelector("#productFormBand")?.classList.add("hidden-panel");
   document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
@@ -4773,7 +4775,7 @@ function openProductFormForNew() {
   form.elements.receiptDate.value = todayValue();
   if (form.elements.receiptPhotoFile) form.elements.receiptPhotoFile.value = "";
   document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
-  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+  document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad ";
   form.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
   document.querySelector("#cancelProductEdit")?.classList.remove("hidden-panel");
   band.classList.remove("hidden-panel");
@@ -6664,7 +6666,7 @@ function bindForms() {
     event.currentTarget.elements.receiptDate.required = true;
     event.currentTarget.elements.receiptDate.value = todayValue();
     document.querySelector("#productFormTitle").textContent = "Nuevo ingreso al depósito";
-    document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad a ingresar ";
+    document.querySelector("#productQuantityLabel").firstChild.textContent = "Cantidad ";
     event.currentTarget.querySelector('button[type="submit"]').textContent = "Guardar ingreso";
     document.querySelector("#cancelProductEdit")?.classList.add("hidden-panel");
     renderAll();
