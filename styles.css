@@ -3030,3 +3030,19 @@ td.nowrap { white-space: nowrap; }
     grid-column: 1 / -1;
   }
 }
+
+/* Probar conexión */
+.sync-diagnostics:empty { display: none; }
+.sync-diagnostics {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafcf9;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sync-diagnostics strong { display: block; margin-bottom: 4px; }
+.diag-line.ok { color: var(--green-dark); }
+.diag-line.bad { color: #a12626; font-weight: 600; }

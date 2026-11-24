@@ -184,7 +184,7 @@ function safeStorageSet(key, value) {
 let syncInFlightId = "";
 // Límites para que "Sincronizando..." nunca quede colgado: cada envío espera como máximo 45 s, y una sincronización
 // completa corta a los 4 minutos (lo que falte sale en la próxima). La foto completa tiene 2 minutos.
-let syncItemTimeoutMs = 45000;
+let syncItemTimeoutMs = 25000;
 let syncTotalTimeoutMs = 240000;
 let photoUploadTimeoutMs = 120000;
 let syncProgress = { done: 0, total: 0 };
@@ -563,8 +563,14 @@ async function syncOneItem(item) {
     }, syncItemTimeoutMs);
     result = await response.json();
   } catch (error) {
-    // Tardó demasiado: no se reintenta por el método alternativo (también tardaría). Sigue en la próxima.
-    if (error?.name === "AbortError") return { status: "transport", message: "Google tardó demasiado en responder. Queda pendiente para la próxima sincronización." };
+    // Google no respondió a tiempo. Muchas veces el registro igual se guardó (el Apps Script tarda 2 a 4 s) y lo que
+    // se perdió es la respuesta: se confirma leyendo la planilla y, si está, se sigue con el resto.
+    if (error?.name === "AbortError") {
+      const confirmed = await confirmItemByReading(item);
+      if (confirmed === true) return { status: "ok" };
+      if (confirmed === false) return { status: "transport", message: "Google no respondió al enviar y el registro todavía no figura en la planilla. Queda pendiente." };
+      return { status: "transport", message: "Google no respondió ni al enviar ni al leer la planilla. Tocá 'Probar conexión' para ver qué falla." };
+    }
     // No se pudo leer la respuesta. Un registro grande no entra en la dirección web del método alternativo:
     // se verifica leyendo la planilla si llegó igual.
     if (isLargeSyncItem(item)) {
@@ -584,6 +590,77 @@ async function syncOneItem(item) {
     }
   }
   return interpretSyncResult(item, result);
+}
+
+// true = el registro está en la planilla (o, si era un borrado, ya no está); false = no está; null = no se pudo leer.
+async function confirmItemByReading(item) {
+  try {
+    await wait(1500);
+    const read = await pullRemoteData();
+    const rows = Array.isArray(read?.data?.[item.table]) ? read.data[item.table] : [];
+    if (item.action === "delete") {
+      const key = recordMergeKey(item.table, item.record);
+      return !rows.some((row) => recordMergeKey(item.table, row) === key);
+    }
+    return remoteContainsSyncItem(read.data || {}, item);
+  } catch {
+    return null;
+  }
+}
+
+// ===== Probar conexión =====
+// Mide por separado las tres formas en que la app habla con Google, para saber cuál falla sin herramientas técnicas.
+let connectionTestRunning = false;
+
+async function runConnectionTest() {
+  const box = document.querySelector("#syncDiagnostics");
+  if (!box || connectionTestRunning) return;
+  if (!syncConfig.apiUrl) { showToast("Falta la URL de Apps Script"); return; }
+  connectionTestRunning = true;
+  const lines = [];
+  const paint = (running = true) => {
+    box.innerHTML = `<strong>Prueba de conexión</strong>${lines.map((line) => `<div class="diag-line ${line.ok ? "ok" : line.ok === false ? "bad" : ""}">${line.ok ? "✓" : line.ok === false ? "✗" : "…"} ${escapeHtml(line.text)}</div>`).join("")}${running ? '<div class="diag-line">Probando…</div>' : ""}`;
+  };
+  const describe = (error) => error?.name === "AbortError" ? "sin respuesta (se cortó por tiempo)" : `${error?.name || "Error"}: ${error?.message || error}`;
+  const timed = async (label, fn) => {
+    const started = performance.now();
+    try {
+      const detail = await fn();
+      lines.push({ ok: true, text: `${label}: ${Math.round(performance.now() - started)} ms${detail ? ` · ${detail}` : ""}` });
+    } catch (error) {
+      lines.push({ ok: false, text: `${label}: ${describe(error)} (a los ${Math.round((performance.now() - started) / 1000)} s)` });
+    }
+    paint();
+  };
+  lines.push({ ok: null, text: `Conexión del equipo: ${navigator.onLine === false ? "sin conexión" : "con conexión"} · versión de la app ${document.querySelector('script[src^="app.js"]')?.getAttribute("src")?.split("v=")[1] || "-"}` });
+  paint();
+  await timed("1. Aviso simple a Google", async () => {
+    const response = await fetchWithTimeout(syncConfig.apiUrl, { method: "GET" }, 20000);
+    const result = await response.json();
+    if (!result?.ok) throw new Error(result?.error || "respuesta inesperada");
+    return "responde";
+  });
+  await timed("2. Envío vacío (como al sincronizar)", async () => {
+    const response = await fetchWithTimeout(syncConfig.apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ source: "gestion-agro", key: syncConfig.apiKey || "", items: [] })
+    }, 20000);
+    const text = await response.text();
+    let result;
+    try { result = JSON.parse(text); } catch { throw new Error(`respuesta que no es de la app (${text.slice(0, 60).replace(/\s+/g, " ")}…)`); }
+    if (result?.ok === false) throw new Error(result.error || "rechazado");
+    return "aceptado";
+  });
+  await timed("3. Lectura de la planilla", async () => {
+    const result = await pullRemoteData();
+    const data = result?.data || {};
+    return `${(data.lots || []).length} lotes, ${(data.orders || []).length} órdenes, ${(data.products || []).length} insumos`;
+  });
+  connectionTestRunning = false;
+  saveData();
+  paint(false);
+  renderAll();
 }
 
 function isLargeSyncItem(item) {
@@ -7117,6 +7194,7 @@ function bindSyncTools() {
     syncPending();
   });
   syncButton?.addEventListener("click", () => syncPending());
+  document.querySelector("#syncTest")?.addEventListener("click", () => runConnectionTest());
   globalSyncButton?.addEventListener("click", () => syncPending());
   window.addEventListener("online", () => {
     renderSyncStatus();
