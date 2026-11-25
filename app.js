@@ -184,7 +184,13 @@ function safeStorageSet(key, value) {
 let syncInFlightId = "";
 // Límites para que "Sincronizando..." nunca quede colgado: cada envío espera como máximo 45 s, y una sincronización
 // completa corta a los 4 minutos (lo que falte sale en la próxima). La foto completa tiene 2 minutos.
-let syncItemTimeoutMs = 25000;
+// Google a veces "se cuelga" antes de ejecutar el Apps Script (medido: 4 a 5 de cada 10 pedidos), aunque cuando
+// arranca termina en 1 a 4 s. Por eso: espera corta y varios intentos. Reenviar es seguro (el Apps Script descarta
+// los repetidos por su syncId).
+let syncItemTimeoutMs = 12000;
+let syncItemAttempts = 3;
+let readTimeoutMs = 20000;
+let readAttempts = 3;
 let syncTotalTimeoutMs = 240000;
 let photoUploadTimeoutMs = 120000;
 let syncProgress = { done: 0, total: 0 };
@@ -462,6 +468,7 @@ async function syncPending() {
   let problemCount = 0;
   let stopMessage = "";
   const startedAt = Date.now();
+  let consecutiveTransport = 0;
   syncProgress = { done: 0, total: batch.length };
   renderSyncStatus();
   try {
@@ -479,15 +486,26 @@ async function syncPending() {
       const outcome = await syncOneItem(item);
       syncInFlightId = "";
       if (outcome.status === "ok") {
+        consecutiveTransport = 0;
         markSynced(item.syncId);
         removeFromSyncQueue(item.syncId);
         syncedCount += 1;
         continue;
       }
-      if (outcome.status === "transport" || outcome.status === "auth") {
+      if (outcome.status === "auth") {
         stopMessage = outcome.message;
         break;
       }
+      if (outcome.status === "transport") {
+        consecutiveTransport += 1;
+        blockedKeys.add(key);
+        if (consecutiveTransport >= 2) {
+          stopMessage = outcome.message;
+          break;
+        }
+        continue;
+      }
+      consecutiveTransport = 0;
       if (outcome.status === "conflict" && item.auto) {
         const record = localRecordForSyncItem(item);
         if (record && record._syncId === item.syncId) record._syncStatus = undefined;
@@ -556,12 +574,21 @@ async function syncOneItem(item) {
   const body = JSON.stringify({ source: "gestion-agro", key: syncConfig.apiKey || "", items: [item] });
   let result;
   try {
-    const response = await fetchWithTimeout(syncConfig.apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body
-    }, syncItemTimeoutMs);
-    result = await response.json();
+    let lastError = null;
+    for (let attempt = 1; attempt <= syncItemAttempts && !result; attempt += 1) {
+      try {
+        const response = await fetchWithTimeout(syncConfig.apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body
+        }, syncItemTimeoutMs);
+        result = await response.json();
+      } catch (error) {
+        lastError = error;
+        if (error?.name !== "AbortError") break; // otro error (no un cuelgue): se maneja abajo
+      }
+    }
+    if (!result) throw lastError || new Error("Sin respuesta");
   } catch (error) {
     // Google no respondió a tiempo. Muchas veces el registro igual se guardó (el Apps Script tarda 2 a 4 s) y lo que
     // se perdió es la respuesta: se confirma leyendo la planilla y, si está, se sigue con el resto.
@@ -617,25 +644,38 @@ async function runConnectionTest() {
   if (!box || connectionTestRunning) return;
   if (!syncConfig.apiUrl) { showToast("Falta la URL de Apps Script"); return; }
   connectionTestRunning = true;
+  const testButton = document.querySelector("#syncTest");
+  if (testButton) { testButton.disabled = true; testButton.textContent = "Probando…"; }
   const lines = [];
   const paint = (running = true) => {
-    box.innerHTML = `<strong>Prueba de conexión</strong>${lines.map((line) => `<div class="diag-line ${line.ok ? "ok" : line.ok === false ? "bad" : ""}">${line.ok ? "✓" : line.ok === false ? "✗" : "…"} ${escapeHtml(line.text)}</div>`).join("")}${running ? '<div class="diag-line">Probando…</div>' : ""}`;
+    box.innerHTML = `<strong>Prueba de conexión</strong>${lines.map((line) => `<div class="diag-line ${line.ok ? "ok" : line.ok === false ? "bad" : ""}">${line.ok ? "✓" : line.ok === false ? "✗" : /de 3/.test(line.text) ? "⚠" : "•"} ${escapeHtml(line.text)}</div>`).join("")}${running ? '<div class="diag-line">Probando…</div>' : ""}`;
   };
   const describe = (error) => error?.name === "AbortError" ? "sin respuesta (se cortó por tiempo)" : `${error?.name || "Error"}: ${error?.message || error}`;
+  // Cada paso se prueba 3 veces: la falla de Google es intermitente y un solo intento no alcanza para verla.
   const timed = async (label, fn) => {
-    const started = performance.now();
-    try {
-      const detail = await fn();
-      lines.push({ ok: true, text: `${label}: ${Math.round(performance.now() - started)} ms${detail ? ` · ${detail}` : ""}` });
-    } catch (error) {
-      lines.push({ ok: false, text: `${label}: ${describe(error)} (a los ${Math.round((performance.now() - started) / 1000)} s)` });
+    const results = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const started = performance.now();
+      try {
+        const detail = await fn();
+        results.push({ ok: true, ms: Math.round(performance.now() - started), detail });
+      } catch (error) {
+        results.push({ ok: false, ms: Math.round(performance.now() - started), error: describe(error) });
+      }
     }
+    const good = results.filter((item) => item.ok);
+    const times = results.map((item) => item.ok ? `${(item.ms / 1000).toFixed(1)} s` : "colgado").join(", ");
+    const detail = good[0]?.detail ? ` · ${good[0].detail}` : "";
+    const error = results.find((item) => !item.ok)?.error;
+    lines.push({ ok: good.length === 3 ? true : good.length ? null : false, text: `${label}: ${good.length} de 3 respondieron (${times})${detail}${!good.length && error ? ` · ${error}` : ""}` });
     paint();
   };
+  paint();
+  box.scrollIntoView({ behavior: "smooth", block: "center" });
   lines.push({ ok: null, text: `Conexión del equipo: ${navigator.onLine === false ? "sin conexión" : "con conexión"} · versión de la app ${document.querySelector('script[src^="app.js"]')?.getAttribute("src")?.split("v=")[1] || "-"}` });
   paint();
   await timed("1. Aviso simple a Google", async () => {
-    const response = await fetchWithTimeout(syncConfig.apiUrl, { method: "GET" }, 20000);
+    const response = await fetchWithTimeout(syncConfig.apiUrl, { method: "GET" }, 12000);
     const result = await response.json();
     if (!result?.ok) throw new Error(result?.error || "respuesta inesperada");
     return "responde";
@@ -645,7 +685,7 @@ async function runConnectionTest() {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ source: "gestion-agro", key: syncConfig.apiKey || "", items: [] })
-    }, 20000);
+    }, 12000);
     const text = await response.text();
     let result;
     try { result = JSON.parse(text); } catch { throw new Error(`respuesta que no es de la app (${text.slice(0, 60).replace(/\s+/g, " ")}…)`); }
@@ -653,11 +693,14 @@ async function runConnectionTest() {
     return "aceptado";
   });
   await timed("3. Lectura de la planilla", async () => {
-    const result = await pullRemoteData();
+    const result = await pullRemoteDataOnce(readTimeoutMs);
     const data = result?.data || {};
     return `${(data.lots || []).length} lotes, ${(data.orders || []).length} órdenes, ${(data.products || []).length} insumos`;
   });
   connectionTestRunning = false;
+  if (testButton) { testButton.disabled = false; testButton.textContent = "Probar conexión"; }
+  const flaky = lines.some((line) => line.ok === null && /de 3/.test(line.text)) || lines.some((line) => line.ok === false);
+  if (flaky) lines.push({ ok: null, text: "Si algunos intentos quedan \"colgado\", Google está respondiendo de forma intermitente: la app reintenta sola y lo que no llegue sale en la próxima sincronización." });
   saveData();
   paint(false);
   renderAll();
@@ -708,19 +751,35 @@ function syncOneItemJsonp(item) {
   });
 }
 
-function pullRemoteData() {
+async function pullRemoteData() {
+  let lastError = null;
+  for (let attempt = 1; attempt <= readAttempts; attempt += 1) {
+    try {
+      return await pullRemoteDataOnce(readTimeoutMs);
+    } catch (error) {
+      lastError = error;
+      // Clave equivocada o respuesta del Apps Script con error: no tiene sentido reintentar.
+      if (!error?.retryable) throw error;
+    }
+  }
+  throw lastError;
+}
+
+function pullRemoteDataOnce(timeoutMs) {
   return new Promise((resolve, reject) => {
     const callbackName = `gestionAgroRead_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const separator = syncConfig.apiUrl.includes("?") ? "&" : "?";
     const script = document.createElement("script");
+    const retryable = (message) => Object.assign(new Error(message), { retryable: true });
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error("Google tardó demasiado en mandar la planilla (más de 45 segundos). Probá de nuevo en un rato."));
-    }, 45000);
+      reject(retryable("Google no mandó la planilla (se probó 3 veces). Probá de nuevo en un rato."));
+    }, timeoutMs);
 
     function cleanup() {
       window.clearTimeout(timeout);
-      delete window[callbackName];
+      // Si la respuesta llega tarde, que no dé error en la consola.
+      window[callbackName] = () => {};
       script.remove();
     }
 
@@ -740,7 +799,7 @@ function pullRemoteData() {
 
     script.onerror = () => {
       cleanup();
-      reject(new Error("No se pudo conectar con Apps Script"));
+      reject(retryable("No se pudo conectar con Apps Script"));
     };
     script.src = `${syncConfig.apiUrl}${separator}action=read&key=${encodeURIComponent(syncConfig.apiKey || "")}&callback=${callbackName}&ts=${Date.now()}`;
     document.body.appendChild(script);
