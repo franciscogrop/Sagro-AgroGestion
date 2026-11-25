@@ -6,7 +6,7 @@
     <title>Gestión Agro SAGRO SRL</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="styles.css?v=20261125-reintentos" />
+    <link rel="stylesheet" href="styles.css?v=20261125-historico" />
   </head>
   <body>
     <div class="app-shell">
@@ -608,26 +608,36 @@
           </section>
         </section>
 
-        <section class="view desktop-view" id="historico">
-          <section class="panel">
-            <div class="panel-header">
-              <h2>Rendimiento histórico por cultivo</h2>
-              <span class="panel-note">Promedios calculados solo con campañas que tienen rinde cargado</span>
+        <section class="view desktop-view" id="historico" data-tab="lote">
+          <div class="deposit-toolbar">
+            <div class="deposit-tabs" role="tablist" aria-label="Vistas del histórico">
+              <button class="deposit-tab active" role="tab" aria-selected="true" type="button" data-history-tab="lote">Por lote</button>
+              <button class="deposit-tab" role="tab" aria-selected="false" type="button" data-history-tab="cultivo">Por cultivo</button>
+              <button class="deposit-tab" role="tab" aria-selected="false" type="button" data-history-tab="campana">Por campaña</button>
             </div>
-            <div id="historyCropCards" class="history-crop-grid"></div>
-          </section>
+          </div>
 
-          <section class="panel">
-            <div class="panel-header">
-              <h2>Buscar lote</h2>
-              <span class="panel-note">Elegí un lote para abrir su historia completa</span>
-            </div>
-            <div class="history-search">
-              <input id="historyLotSearch" list="historyLotOptions" placeholder="Buscar lote o campo" />
-              <datalist id="historyLotOptions"></datalist>
-              <button class="link-button primary" id="openHistoryLot" type="button">Ver historia del lote</button>
-            </div>
-          </section>
+          <div data-history-panel="lote">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Rinde y margen por lote</h2>
+                <div class="history-search">
+                  <input id="historyLotSearch" list="historyLotOptions" placeholder="Buscar lote o campo" />
+                  <datalist id="historyLotOptions"></datalist>
+                  <button class="link-button primary" id="openHistoryLot" type="button">Ver historia del lote</button>
+                </div>
+              </div>
+              <div id="historyByLot" class="history-tab-body"></div>
+            </section>
+          </div>
+
+          <div data-history-panel="cultivo">
+            <div id="historyByCrop" class="history-tab-body"></div>
+          </div>
+
+          <div data-history-panel="campana">
+            <div id="historyByCampaign" class="history-tab-body"></div>
+          </div>
         </section>
 
         <section class="view desktop-view" id="ficha-historico-cultivo">
@@ -734,6 +744,6 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=20261125-reintentos"></script>
+    <script src="app.js?v=20261125-historico"></script>
   </body>
 </html>

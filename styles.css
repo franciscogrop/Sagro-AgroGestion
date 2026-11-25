@@ -3046,3 +3046,79 @@ td.nowrap { white-space: nowrap; }
 .sync-diagnostics strong { display: block; margin-bottom: 4px; }
 .diag-line.ok { color: var(--green-dark); }
 .diag-line.bad { color: #a12626; font-weight: 600; }
+
+/* ===== Histórico: solapas Por lote / Por cultivo / Por campaña ===== */
+#historico [data-history-panel] { display: none; }
+#historico[data-tab="lote"] [data-history-panel="lote"],
+#historico[data-tab="cultivo"] [data-history-panel="cultivo"],
+#historico[data-tab="campana"] [data-history-panel="campana"] { display: block; }
+
+.history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 16px;
+}
+
+.history-tab-body > .history-toolbar { padding: 0 0 12px; }
+.history-tab-body > .panel { margin-bottom: 16px; }
+
+.history-matrix-wrap { max-height: 70vh; overflow: auto; }
+
+.history-matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.history-matrix th,
+.history-matrix td {
+  padding: 6px 10px;
+  vertical-align: top;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f7f9f5;
+}
+
+.history-matrix .sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fff;
+  text-align: left;
+  min-width: 150px;
+  box-shadow: 1px 0 0 var(--line);
+}
+
+.history-matrix thead .sticky-col { z-index: 3; background: #f7f9f5; }
+.history-matrix .sticky-col small { display: block; color: var(--muted); font-weight: 400; }
+
+.hist-crop { display: block; line-height: 1.35; }
+.hist-crop + .hist-crop { margin-top: 3px; }
+.hist-crop b { font-weight: 600; }
+.hist-crop small { display: block; font-size: 11px; }
+.hist-crop.muted, .hist-crop.muted b { color: var(--muted); font-weight: 400; font-style: italic; }
+.hist-total { background: #f2f6ef; }
+.enso-tag { display: block; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+.history-matrix small { color: var(--muted); }
+.history-matrix small.value-good { color: var(--green-dark); }
+.history-matrix small.value-bad { color: #a12626; }
+
+/* La matriz se desplaza dentro de su recuadro; la página no se ensancha */
+#historico { grid-template-columns: minmax(0, 1fr); }
+#historico > *, .history-tab-body { min-width: 0; }
+.history-matrix tbody th { text-transform: none; letter-spacing: normal; font-size: 13px; }
+.history-matrix tbody th small { font-size: 11px; }
+
+.legend-above { color: var(--green-dark); font-weight: 700; }
+.legend-below { color: var(--red); font-weight: 700; }
+.hist-crop .yield-value { min-width: 0; }
+
+#historyByCampaign .compact-table th, #historyByCampaign .compact-table td { white-space: nowrap; }

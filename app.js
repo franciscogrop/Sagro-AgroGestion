@@ -5529,6 +5529,11 @@ function buildLotMargins(campaign = currentCostCampaign()) {
 
 function buildMarginRow(lot, closures, appCosts, partOfRotation = false) {
   {
+    // Campañas anteriores a la app: si el cierre tiene costos de aplicación cargados a mano, se usan esos.
+    if (!(appCosts > 0)) {
+      const manual = closures.reduce((sum, closure) => sum + (closure.applicationCostsManual === true || closure.applicationCostsManual === "TRUE" ? parseDecimal(closure.applicationCosts) : 0), 0);
+      if (manual > 0) appCosts = manual;
+    }
     const harvestedHectares = Math.max(...closures.map((closure) => parseDecimal(closure.hectares)), 0);
     const hectares = harvestedHectares || parseDecimal(lot.hectares);
     const kg = closures.reduce((sum, closure) => sum + parseDecimal(closure.kgHarvested), 0);
@@ -5616,12 +5621,12 @@ function renderMargins(campaign = currentCostCampaign()) {
 
 // Precios de referencia: completa de una vez el precio por tn de los cierres de la campaña que no lo tienen.
 // Se guarda en cada cierre (planilla Campanas), así el margen queda igual en todos los dispositivos.
-function renderReferencePrices(campaign) {
-  const box = document.querySelector("#referencePrices") || (() => {
+function renderReferencePrices(campaign, anchorSelector = "#marginSummary", formId = "referencePrices") {
+  const box = document.querySelector(`#${formId}`) || (() => {
     const element = document.createElement("form");
-    element.id = "referencePrices";
+    element.id = formId;
     element.className = "reference-prices";
-    document.querySelector("#marginSummary")?.after(element);
+    document.querySelector(anchorSelector)?.after(element);
     return element;
   })();
   const missing = data.closures.filter((closure) => normalizeCampaignValue(closure.campaign) === campaign
@@ -6183,7 +6188,332 @@ function renderYieldComparedTo(record, avg) {
   return `<span class="yield-value ${cls}">${numberOptional(record.yieldKgHa)}</span>`;
 }
 
+// ===== Histórico: solapas Por lote / Por cultivo / Por campaña =====
+const historyTabKey = "gestion-agro-historico-solapa";
+let historyTab = ["lote", "cultivo", "campana"].includes(safeStorageGet(historyTabKey)) ? safeStorageGet(historyTabKey) : "lote";
+let historyEnsoFilter = "";
+let historyFarmFilter = "";
+let historyCampaignSelected = "";
+const ENSO_PHASES = ["El Niño", "La Niña", "Neutral"];
+
+// Cultivo para comparar rindes: igual que en el resto de la app, pero el maíz tardío va aparte (rinde distinto).
+function historyCropKey(crop) {
+  const normalized = normalizeName(crop);
+  if (/^ma.*z/.test(normalized) && normalized.includes("tardi")) return "Maíz tardío";
+  const canonical = canonicalCropName(crop);
+  return canonical === "Maiz" ? "Maíz" : canonical;
+}
+
+function normalizeEnso(value) {
+  const normalized = normalizeName(value);
+  if (normalized.includes("nino")) return "El Niño";
+  if (normalized.includes("nina")) return "La Niña";
+  if (normalized.includes("neutral") || normalized.includes("neutro")) return "Neutral";
+  return "";
+}
+
+function isValidCampaign(value) {
+  return /^\d{4}\/\d{2}$/.test(normalizeCampaignValue(value));
+}
+
+// Un registro por cultivo cosechado (con kilos): lote, campaña, cultivo, ENSO, ha y rinde.
+function historyRecords() {
+  const cache = derivedData();
+  if (cache.historyRecords) return cache.historyRecords;
+  cache.historyRecords = data.closures
+    .filter((closure) => closure.crop && isValidCampaign(closure.campaign) && closureHarvested(closure))
+    .map((closure) => {
+      const lot = findLot(closure);
+      const hectares = parseDecimal(closure.hectares) || parseDecimal(lot?.hectares);
+      return {
+        closure,
+        lot,
+        campaign: normalizeCampaignValue(closure.campaign),
+        crop: historyCropKey(closure.crop),
+        enso: normalizeEnso(closure.enso),
+        hectares,
+        kg: parseDecimal(closure.kgHarvested),
+        yieldKgHa: hectares ? parseDecimal(closure.kgHarvested) / hectares : 0
+      };
+    })
+    .filter((record) => record.yieldKgHa > 0);
+  return cache.historyRecords;
+}
+
+// Margen de cada cierre, solo cuando está completo (rinde, precio y costos).
+function historyMarginIndex() {
+  const cache = derivedData();
+  if (cache.historyMargins) return cache.historyMargins;
+  const map = new Map();
+  [...new Set(data.closures.map((closure) => normalizeCampaignValue(closure.campaign)).filter(isValidCampaign))]
+    .forEach((campaign) => buildLotMargins(campaign).forEach((row) => {
+      if (row.complete) row.closures.forEach((closure) => map.set(closure.id, row));
+    }));
+  cache.historyMargins = map;
+  return map;
+}
+
+// Rinde promedio ponderado por hectáreas (kg totales / ha totales).
+function weightedYield(records) {
+  const hectares = records.reduce((sum, record) => sum + record.hectares, 0);
+  return hectares ? records.reduce((sum, record) => sum + record.kg, 0) / hectares : 0;
+}
+
+function groupBy(list, keyFn) {
+  return list.reduce((map, item) => {
+    const key = keyFn(item);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(item);
+    return map;
+  }, new Map());
+}
+
+function historyCropOrder(a, b) {
+  const order = ["Soja 1ra", "Soja 2da", "Maíz", "Maíz tardío", "Trigo", "Girasol", "Sorgo"];
+  const ia = order.indexOf(a);
+  const ib = order.indexOf(b);
+  return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || compareText(a, b);
+}
+
+function setHistoryTab(tab) {
+  historyTab = ["lote", "cultivo", "campana"].includes(tab) ? tab : "lote";
+  try { window.localStorage?.setItem(historyTabKey, historyTab); } catch { /* sin almacenamiento */ }
+  renderHistoryPanel();
+}
+
 function renderHistoryPanel() {
+  const view = document.querySelector("#historico");
+  if (!view) return;
+  renderHistoryLotSearch();
+  view.dataset.tab = historyTab;
+  view.querySelectorAll("[data-history-tab]").forEach((button) => {
+    const active = button.dataset.historyTab === historyTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  if (!view.dataset.tabsBound) {
+    view.dataset.tabsBound = "true";
+    view.querySelectorAll("[data-history-tab]").forEach((button) => button.addEventListener("click", () => setHistoryTab(button.dataset.historyTab)));
+  }
+  // Solo se arma la solapa visible (la vista completa tiene cientos de celdas).
+  if (historyTab === "lote") renderHistoryByLot(view.querySelector("#historyByLot"));
+  else if (historyTab === "cultivo") renderHistoryByCrop(view.querySelector("#historyByCrop"));
+  else renderHistoryByCampaign(view.querySelector("#historyByCampaign"));
+}
+
+// ---------- Solapa 1: por lote (filas = lotes, columnas = campañas) ----------
+function renderHistoryByLot(container) {
+  if (!container) return;
+  const records = historyRecords();
+  const margins = historyMarginIndex();
+  const averages = new Map([...groupBy(records, (record) => record.crop)].map(([crop, list]) => [crop, weightedYield(list)]));
+  const farms = uniqueSorted(data.lots.map((lot) => lot.farm));
+  if (historyFarmFilter && !farms.includes(historyFarmFilter)) historyFarmFilter = "";
+  const lots = data.lots
+    .filter((lot) => !historyFarmFilter || lot.farm === historyFarmFilter)
+    .sort((a, b) => compareText(a.farm, b.farm) || compareText(displayLotName(a), displayLotName(b)));
+  const lotIds = new Set(lots.map((lot) => lot.id));
+  const campaigns = [...new Set(data.closures.filter((closure) => lotIds.has(findLot(closure)?.id)).map((closure) => normalizeCampaignValue(closure.campaign)).filter(isValidCampaign))]
+    .sort((a, b) => campaignStartYear(b) - campaignStartYear(a));
+  const cell = (lot, campaign) => {
+    const closures = lotRotationSequence(lot, campaign);
+    if (!closures.length) return "";
+    return closures.map((closure) => {
+      const crop = historyCropKey(closure.crop);
+      if (!closureHarvested(closure)) return `<div class="hist-crop muted">${escapeHtml(crop)}</div>`;
+      const ha = parseDecimal(closure.hectares) || parseDecimal(lot.hectares);
+      const kgHa = ha ? parseDecimal(closure.kgHarvested) / ha : 0;
+      const avg = averages.get(crop) || 0;
+      const cls = avg && kgHa ? (kgHa >= avg * 1.05 ? "yield-above" : kgHa <= avg * 0.95 ? "yield-below" : "yield-even") : "";
+      const margin = margins.get(closure.id);
+      return `<div class="hist-crop ${cropClass(crop)}"><b>${escapeHtml(crop)}</b> <span class="yield-value ${cls}">${number(kgHa, 0)}</span>${margin ? `<small class="${margin.marginHa >= 0 ? "value-good" : "value-bad"}">MB ${money(margin.marginHa)}/ha</small>` : ""}</div>`;
+    }).join("");
+  };
+  container.innerHTML = `
+    <div class="history-toolbar">
+      <label class="inline-select">Campo
+        <select id="historyFarmFilter"><option value="">Todos</option>${farms.map((farm) => `<option value="${escapeHtml(farm)}">${escapeHtml(farm)}</option>`).join("")}</select>
+      </label>
+      <span class="panel-note">Rinde en kg/ha. <span class="legend-above">Verde</span>: 5 % o más sobre el promedio histórico del cultivo; <span class="legend-below">rojo</span>: 5 % o más debajo. MB = margen bruto (solo si el cierre tiene precio y costos). En gris, cultivos sin cosecha.</span>
+    </div>
+    <div class="table-wrap history-matrix-wrap">
+      <table class="history-matrix">
+        <thead><tr><th class="sticky-col">Lote</th>${campaigns.map((campaign) => `<th>${campaign}</th>`).join("")}</tr></thead>
+        <tbody>${lots.map((lot) => `<tr>
+          <th class="sticky-col"><button class="receipt-link" type="button" data-history-lot="${escapeHtml(lot.id)}">${escapeHtml(displayLotName(lot))}</button><small>${escapeHtml(lot.farm || "")} · ${number(lot.hectares, 0)} ha</small></th>
+          ${campaigns.map((campaign) => `<td>${cell(lot, campaign)}</td>`).join("")}
+        </tr>`).join("") || `<tr><td>No hay lotes para este campo.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  const select = container.querySelector("#historyFarmFilter");
+  select.value = historyFarmFilter;
+  select.addEventListener("change", () => { historyFarmFilter = select.value; renderHistoryPanel(); });
+  container.querySelectorAll("[data-history-lot]").forEach((button) => button.addEventListener("click", () => openHistoryLot(button.dataset.historyLot)));
+}
+
+// ---------- Solapa 2: por cultivo (promedios por campaña y total, filtro ENSO) ----------
+function renderHistoryByCrop(container) {
+  if (!container) return;
+  const all = historyRecords();
+  const records = historyEnsoFilter ? all.filter((record) => record.enso === historyEnsoFilter) : all;
+  const margins = historyMarginIndex();
+  const byCrop = groupBy(records, (record) => record.crop);
+  const crops = [...byCrop.keys()].sort(historyCropOrder);
+  const campaigns = [...new Set(records.map((record) => record.campaign))].sort((a, b) => campaignStartYear(b) - campaignStartYear(a));
+  // Fase ENSO de cada campaña: la más cargada en sus cierres.
+  const ensoByCampaign = new Map([...groupBy(all.filter((record) => record.enso), (record) => record.campaign)].map(([campaign, list]) => {
+    const counts = groupBy(list, (record) => record.enso);
+    return [campaign, [...counts.entries()].sort((a, b) => b[1].length - a[1].length)[0][0]];
+  }));
+  const ensoShort = { "El Niño": "Niño", "La Niña": "Niña", Neutral: "Neutral" };
+  const cropRows = crops.map((crop) => {
+    const list = byCrop.get(crop);
+    const yields = list.map((record) => record.yieldKgHa);
+    const withMargin = list.map((record) => margins.get(record.closure.id)).filter(Boolean);
+    const marginHa = withMargin.length ? withMargin.reduce((sum, row) => sum + row.marginHa, 0) / withMargin.length : null;
+    const byCampaign = groupBy(list, (record) => record.campaign);
+    return `<tr>
+      <th class="sticky-col"><span class="hist-crop ${cropClass(crop)}"><b>${escapeHtml(crop)}</b></span></th>
+      <td class="hist-total"><b>${number(weightedYield(list), 0)}</b></td>
+      <td>${list.length}</td>
+      <td>${number(Math.min(...yields), 0)}</td>
+      <td>${number(Math.max(...yields), 0)}</td>
+      <td>${marginHa == null ? "-" : `<span class="${marginHa >= 0 ? "value-good" : "value-bad"}">${money(marginHa)}</span> <small>(${withMargin.length})</small>`}</td>
+      ${campaigns.map((campaign) => {
+        const items = byCampaign.get(campaign) || [];
+        return `<td>${items.length ? `${number(weightedYield(items), 0)}<small> (${items.length})</small>` : ""}</td>`;
+      }).join("")}
+    </tr>`;
+  }).join("");
+  // Comparación por fase ENSO (siempre con todos los datos)
+  const allByCrop = groupBy(all, (record) => record.crop);
+  const ensoRows = [...allByCrop.keys()].sort(historyCropOrder).map((crop) => {
+    const list = allByCrop.get(crop);
+    const total = weightedYield(list);
+    const phase = (name) => {
+      const items = list.filter((record) => record.enso === name);
+      if (!items.length) return "<td>-</td>";
+      const value = weightedYield(items);
+      const diff = total ? Math.round((value / total - 1) * 100) || 0 : 0;
+      return `<td>${number(value, 0)} <small class="${diff >= 0 ? "value-good" : "value-bad"}">${diff >= 0 ? "+" : ""}${number(diff, 0)} %</small> <small>(${items.length})</small></td>`;
+    };
+    return `<tr><th class="sticky-col"><span class="hist-crop ${cropClass(crop)}"><b>${escapeHtml(crop)}</b></span></th>${ENSO_PHASES.map(phase).join("")}<td><b>${number(total, 0)}</b> <small>(${list.length})</small></td></tr>`;
+  }).join("");
+  container.innerHTML = `
+    <div class="history-toolbar">
+      <label class="inline-select">Año
+        <select id="historyEnsoFilter">
+          <option value="">Todos</option>
+          ${ENSO_PHASES.map((phase) => `<option value="${phase}">${phase}</option>`).join("")}
+        </select>
+      </label>
+      <span class="panel-note">Rinde promedio en kg/ha, ponderado por hectáreas. Entre paréntesis, cuántos lotes cosechados entran en el promedio.${historyEnsoFilter ? ` Mostrando solo campañas ${historyEnsoFilter}.` : ""}</span>
+    </div>
+    <section class="panel">
+      <div class="panel-header"><h2>Rinde por cultivo y campaña</h2></div>
+      <div class="table-wrap history-matrix-wrap">
+        <table class="history-matrix">
+          <thead><tr><th class="sticky-col">Cultivo</th><th>Promedio total</th><th>Lotes</th><th>Mínimo</th><th>Máximo</th><th>Margen prom. u$s/ha</th>${campaigns.map((campaign) => `<th>${campaign}${ensoByCampaign.get(campaign) ? `<small class="enso-tag">${ensoShort[ensoByCampaign.get(campaign)]}</small>` : ""}</th>`).join("")}</tr></thead>
+          <tbody>${cropRows || `<tr><td colspan="6">No hay rindes para este filtro.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-header"><h2>Rinde según el año (ENSO)</h2><span class="panel-note">Promedio de cada cultivo en años Niño, Niña y Neutral, y la diferencia contra su promedio total. Usa todos los datos, sin filtro.</span></div>
+      <div class="table-wrap">
+        <table class="history-matrix">
+          <thead><tr><th class="sticky-col">Cultivo</th>${ENSO_PHASES.map((phase) => `<th>${phase}</th>`).join("")}<th>Todos</th></tr></thead>
+          <tbody>${ensoRows}</tbody>
+        </table>
+      </div>
+    </section>`;
+  const select = container.querySelector("#historyEnsoFilter");
+  select.value = historyEnsoFilter;
+  select.addEventListener("change", () => { historyEnsoFilter = select.value; renderHistoryPanel(); });
+}
+
+// ---------- Solapa 3: por campaña ----------
+function renderHistoryByCampaign(container) {
+  if (!container) return;
+  const records = historyRecords();
+  const campaigns = [...new Set(data.closures.map((closure) => normalizeCampaignValue(closure.campaign)).filter(isValidCampaign))]
+    .sort((a, b) => campaignStartYear(b) - campaignStartYear(a));
+  if (!campaigns.includes(historyCampaignSelected)) {
+    // Por defecto: la campaña más reciente que ya tiene rindes.
+    historyCampaignSelected = campaigns.find((campaign) => records.some((record) => record.campaign === campaign)) || campaigns[0] || "";
+  }
+  const campaign = historyCampaignSelected;
+  const rows = buildLotMargins(campaign).filter((row) => row.closures.length);
+  const campaignRecords = records.filter((record) => record.campaign === campaign);
+  const enso = [...new Set(campaignRecords.map((record) => record.enso).filter(Boolean))].join(" / ");
+  const byCrop = groupBy(rows, (row) => historyCropKey(row.closures[0].crop));
+  const summary = [...byCrop.keys()].sort(historyCropOrder).map((crop) => {
+    const list = byCrop.get(crop);
+    const harvested = campaignRecords.filter((record) => record.crop === crop);
+    const complete = list.filter((row) => row.complete);
+    const completeHa = complete.reduce((sum, row) => sum + row.hectares, 0);
+    const marginHa = completeHa ? complete.reduce((sum, row) => sum + row.margin, 0) / completeHa : null;
+    return `<tr>
+      <th><span class="hist-crop ${cropClass(crop)}"><b>${escapeHtml(crop)}</b></span></th>
+      <td>${list.length}</td>
+      <td>${number(list.reduce((sum, row) => sum + row.hectares, 0), 0)}</td>
+      <td>${harvested.length ? number(weightedYield(harvested), 0) : "-"}</td>
+      <td>${marginHa == null ? "-" : `<span class="${marginHa >= 0 ? "value-good" : "value-bad"}">${money(marginHa)}</span>`}</td>
+      <td>${complete.length} de ${list.length}</td>
+    </tr>`;
+  }).join("");
+  const sorted = rows.slice().sort((a, b) => historyCropOrder(historyCropKey(a.closures[0].crop), historyCropKey(b.closures[0].crop)) || compareText(displayLotName(a.lot), displayLotName(b.lot)));
+  container.innerHTML = `
+    <div class="history-toolbar">
+      <label class="inline-select">Campaña
+        <select id="historyCampaignSelect">${campaigns.map((value) => `<option value="${value}">${value}</option>`).join("")}</select>
+      </label>
+      <span class="panel-note">${enso ? `Año ${escapeHtml(enso)}. ` : ""}Margen = ingreso (kg × precio por tn) menos costos de la app y otros costos del cierre. Tocá un lote para ver su historia.</span>
+    </div>
+    <section class="panel">
+      <div class="panel-header"><h2>Resumen por cultivo · ${escapeHtml(campaign)}</h2></div>
+      <div class="table-wrap" id="historyCampaignSummary">
+        <table class="history-matrix">
+          <thead><tr><th>Cultivo</th><th>Lotes</th><th>Ha</th><th>Rinde kg/ha</th><th>Margen u$s/ha</th><th>Con margen completo</th></tr></thead>
+          <tbody>${summary || `<tr><td colspan="6">No hay cultivos cargados en esta campaña.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-header"><h2>Lotes · ${escapeHtml(campaign)}</h2></div>
+      <div class="table-wrap">
+        <table class="compact-table">
+          <thead><tr><th>Lote</th><th>Cultivo</th><th>Var./Híb.</th><th>ENSO</th><th>Ha</th><th>Rinde kg/ha</th><th>Precio u$s/tn</th><th>Ingreso</th><th>Costos</th><th>Margen</th><th>MB u$s/ha</th><th>Estado</th></tr></thead>
+          <tbody>${sorted.map((row) => {
+            const closure = row.closures[0];
+            const kgHa = closureHarvested(closure) && row.hectares ? parseDecimal(closure.kgHarvested) / row.hectares : 0;
+            const price = parseDecimal(closure.priceTon);
+            return `<tr>
+              <td class="nowrap"><button class="receipt-link" type="button" data-history-lot="${escapeHtml(row.lot.id)}">${escapeHtml(displayLotName(row.lot))}</button></td>
+              <td><span class="hist-crop ${cropClass(historyCropKey(closure.crop))}"><b>${escapeHtml(historyCropKey(closure.crop))}</b></span></td>
+              <td>${escapeHtml(closure.variety || "-")}</td>
+              <td>${escapeHtml(normalizeEnso(closure.enso) || "-")}</td>
+              <td>${number(row.hectares, 1)}</td>
+              <td>${kgHa ? number(kgHa, 0) : "-"}</td>
+              <td>${price > 0 ? number(price, 0) : "-"}</td>
+              <td class="nowrap">${row.income ? money(row.income) : "-"}</td>
+              <td class="nowrap">${row.appCosts + row.otherCosts ? money(row.appCosts + row.otherCosts) : "-"}</td>
+              <td class="nowrap ${row.complete ? (row.margin >= 0 ? "value-good" : "value-bad") : ""}">${row.complete ? money(row.margin) : "-"}</td>
+              <td class="nowrap ${row.complete ? (row.marginHa >= 0 ? "value-good" : "value-bad") : ""}">${row.complete ? money(row.marginHa) : "-"}</td>
+              <td>${row.complete ? '<span class="badge done">Completo</span>' : `<span class="badge warn">${escapeHtml(row.status)}</span>`}</td>
+            </tr>`;
+          }).join("") || `<tr><td colspan="12">No hay cierres en esta campaña.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>`;
+  const select = container.querySelector("#historyCampaignSelect");
+  select.value = campaign;
+  select.addEventListener("change", () => { historyCampaignSelected = select.value; renderHistoryPanel(); });
+  container.querySelectorAll("[data-history-lot]").forEach((button) => button.addEventListener("click", () => openHistoryLot(button.dataset.historyLot)));
+  renderReferencePrices(campaign, "#historyCampaignSummary", "historyReferencePrices");
+}
+
+function renderHistoryCropCardsLegacy() {
   const container = document.querySelector("#historyCropCards");
   if (!container) return;
   const records = historicalYieldRecords();
